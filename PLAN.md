@@ -1,99 +1,83 @@
-# Plan: Add Turtle Slow-Down Powerup
+# Plan: Fix Static Map After Track Wrap
 
-## Overview
+## Problem
 
-Add a collectible turtle-shaped powerup that halves ball speed for 4 seconds when collected. Follows the existing coin spawn/collection pattern across renderer.js, physics.js, main.js, and index.html.
+When the ball reaches the end of the track, `physics.js` wraps the ball position back to the start (`ball.z = -halfLength + 1`), but the level (obstacles, coins, turtle) is **never regenerated**. This causes:
 
-## Codebase Analysis
+1. **Same obstacles every lap** — obstacles stay in identical positions because `regenerateLevel()` is not called on wrap.
+2. **No coins visible** — coins collected on the first pass remain hidden (their meshes have `visible = false` and the `coinsCollected` array still marks them as collected).
+3. **Turtle missing** — once collected or passed, the turtle doesn't reappear.
 
-- **Tech stack**: Pure static HTML+JS (ES modules), Three.js v0.183.2 via CDN importmap, served by nginx in Docker
-- **Key files**: `index.html` (HTML/CSS/UI), `js/main.js` (game loop, state), `js/physics.js` (ball physics, collision), `js/renderer.js` (Three.js scene, mesh generation, RNG), `js/tracker.js` (head tracking — DO NOT MODIFY)
-- **Coin pattern**: Generated in `renderer.js` via `generateCoins(rng)`, exported via `getCoins()`, collected in `physics.js` via distance check (`COIN_COLLECT_RADIUS = 0.8`), hidden via `hideCoin(idx)` called from `main.js` game loop
-- **Speed constants**: `FORWARD_SPEED = 2.0`, `MAX_SPEED = 6.0` in physics.js
-- **RNG**: Seeded via `Date.now()` in `generateLevel()`, deterministic `seededRandom()` function
+## Root Cause
 
-## Technical Approach
+`js/physics.js:142-144` — the track wrap logic only resets `ball.z` but does nothing to refresh the level layout or reset collection state. There is no communication back to `main.js` that a wrap occurred.
 
-### 1. renderer.js — Turtle Mesh & Spawning
+## Solution
 
-**Turtle mesh** (composite Three.js primitives, grouped under `THREE.Group`):
-- Body: `SphereGeometry` scaled flat (scaleY ~0.5), dark green `0x228B22`
-- Head: smaller `SphereGeometry`, positioned at front of body
-- 4 legs: short `CylinderGeometry` positioned at corners
-- Shell detail: slightly larger `SphereGeometry` with darker color on top
+### Approach: Signal wrap event, regenerate in main.js
 
-**Spawn logic** — new `generateTurtle(rng, obstacles)`:
-- Pick random Z between `SAFE_ZONE_Z + 5` and `TRACK_LENGTH/2 - 3`, avoiding obstacle Z ranges
-- Pick random X within track bounds (±halfTrack - 0.5)
-- Spawn exactly 1 turtle per run
-- Place at `COIN_Y` height (same as coins)
+The cleanest fix follows the existing pattern (similar to how `coinsCollected` and `turtleCollected` are communicated):
 
-**Exports to add**:
-- `getTurtle()` → returns `{ x, z }` or `null`
-- `hideTurtle()` → hides the mesh
-- Update `regenerateLevel()` to clean up turtle mesh
+1. **physics.js**: Add a `wrapped: true` flag to the return object of `updateOnTrack()` when the ball wraps around.
 
-### 2. physics.js — Collection & Speed Modifier
+2. **physics.js**: Add a new exported function `refreshLevel(config)` that updates obstacles, coins, and turtle references (and resets their collection state) without resetting ball position or velocity.
 
-**New state variables**:
-- `turtle` (position object or null)
-- `turtleCollected` (boolean)
-- `slowdownActive` (boolean)
-- `slowdownTimer` (float, seconds remaining)
-- `SLOWDOWN_DURATION = 4` (constant)
-- `TURTLE_COLLECT_RADIUS = 0.8`
+3. **main.js**: When `result.wrapped` is true, call `regenerateLevel()` to create new obstacle/coin/turtle meshes, then call `refreshLevel()` with the new layout data.
 
-**In `initPhysics(config)`**: Accept `config.turtle`, reset slowdown state.
+### Detailed Changes
 
-**In `updateOnTrack(dt)`**:
-- Check turtle proximity (same pattern as coins) → set `turtleCollected`, activate slowdown
-- Apply speed modifier: `effectiveForward = slowdownActive ? FORWARD_SPEED / 2 : FORWARD_SPEED`, `effectiveMax = slowdownActive ? MAX_SPEED / 2 : MAX_SPEED`
-- Decrement `slowdownTimer` by `dt`; when ≤ 0, deactivate
-- Re-collecting while active: reset timer to `SLOWDOWN_DURATION` (no further stacking)
-- Return `turtleCollected`, `slowdownActive`, `slowdownTimer` in result object
+#### js/physics.js
 
-**In `resetBall()`**: Clear all slowdown state.
+1. Add `wrapped` boolean tracking in `updateOnTrack()`:
+   - Set `wrapped = true` when `ball.z > halfLength` triggers the wrap.
+   - Include `wrapped` in the return object (default `false`).
+   - Also return `wrapped: false` from `updateFalling()`.
 
-### 3. main.js — Wire Collection & UI Indicator
+2. Add new export `refreshLevel(config)`:
+   ```js
+   export function refreshLevel(config) {
+     obstacles = config.obstacles || [];
+     coins = config.coins || [];
+     coinsCollected = new Array(coins.length).fill(false);
+     turtle = config.turtle || null;
+     turtleCollected = false;
+   }
+   ```
+   This updates level data without touching ball state or slowdown timers.
 
-**New imports**: `getTurtle`, `hideTurtle` from renderer.js
+#### js/main.js
 
-**In `init()` and `exitGameOver()`**: Pass turtle data to physics config via `config.turtle = getTurtle()`
+1. Import `refreshLevel` from `physics.js`.
+2. In the game loop, after `updatePhysics()`, check `result.wrapped`:
+   ```js
+   if (result.wrapped) {
+     regenerateLevel();
+     const newConfig = getTrackConfig();
+     newConfig.obstacles = getObstacles();
+     newConfig.coins = getCoins();
+     newConfig.turtle = getTurtle();
+     refreshLevel(newConfig);
+   }
+   ```
 
-**In game loop**:
-- Check `result.turtleCollected` → call `hideTurtle()`
-- Check `result.slowdownActive` → show/hide `#slowdown-indicator`
+### Why not other approaches?
 
-**UI indicator element**: Reference `document.getElementById('slowdown-indicator')`
+- **Regenerate inside physics.js**: Physics shouldn't know about rendering. The existing architecture separates concerns.
+- **Just reset coinsCollected on wrap**: Would show the same layout forever (same obstacle positions). The description says "the map becomes the same" which implies it should differ.
+- **Use `initPhysics` on wrap**: Would reset ball position to start, causing a visual teleport and losing slowdown state.
 
-### 4. index.html — Indicator Element & CSS
+## File Changes Summary
 
-**CSS** for `#slowdown-indicator`:
-- `position: fixed; bottom: 50px; left: 50%; transform: translateX(-50%);`
-- Green/teal background, white text, rounded, semi-transparent
-- `display: none` by default, `.visible` shows it
-- `z-index: 10` (same as score), `pointer-events: none`
+| File | Change |
+|------|--------|
+| `js/physics.js` | Add `wrapped` flag to return objects; add `refreshLevel()` export |
+| `js/main.js` | Import `refreshLevel`; handle `result.wrapped` by regenerating level |
 
-**HTML**: `<div id="slowdown-indicator">SLOWED</div>` — placed with other HUD elements
+## Verification
 
-## Key Decisions
-
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Turtles per run | 1 | Keeps it rare/special, simpler |
-| Slowdown duration | 4 seconds | Middle of 3-5s range from AC |
-| Collection radius | 0.8 | Same as existing coins |
-| Speed effect | Halve FORWARD_SPEED and MAX_SPEED | Directly from AC |
-| Indicator style | Fixed bottom-center text overlay | Visible but not obstructive |
-| Turtle color | Green (0x228B22) | Distinct from red obstacles, gold coins |
-
-## Scope: Single Agent
-
-All changes are tightly coupled (mesh → physics → game loop → UI). No meaningful parallelism possible.
-
-## Files Modified
-
-- `js/renderer.js` — turtle mesh, spawn, show/hide, regenerate cleanup
-- `js/physics.js` — collection check, speed modifier with timer
-- `js/main.js` — wire collection events, UI indicator, pass turtle to physics
-- `index.html` — indicator HTML element and CSS styles
+- `docker build -t teeter .` must succeed
+- After the ball reaches the end of the track and wraps, obstacles should appear in different positions
+- Coins should be visible after wrapping (fresh coins in new positions)
+- Turtle powerup should reappear after wrapping
+- Score should persist across wraps (not reset to 0)
+- Existing game-over/restart flow should still work
