@@ -2,6 +2,8 @@ const GRAVITY = 9.8;
 const SENSITIVITY = 2.5;
 const FRICTION = 3.0;
 const FORWARD_SPEED = 2.0;
+const PITCH_SENSITIVITY = 3.0;
+const MAX_SPEED = 6.0;
 const MAX_DT = 1 / 30; // Cap delta time to prevent physics explosions
 
 let ball = {};
@@ -24,17 +26,17 @@ export function resetBall() {
   };
 }
 
-export function updatePhysics(dt, tiltAngle) {
+export function updatePhysics(dt, tiltAngle, pitch) {
   dt = Math.min(dt, MAX_DT);
 
   if (ball.falling) {
     return updateFalling(dt);
   }
 
-  return updateOnTrack(dt, tiltAngle);
+  return updateOnTrack(dt, tiltAngle, pitch);
 }
 
-function updateOnTrack(dt, tiltAngle) {
+function updateOnTrack(dt, tiltAngle, pitch) {
   // Lateral acceleration from head tilt
   const ax = GRAVITY * Math.sin(tiltAngle) * SENSITIVITY;
   ball.vx += ax * dt;
@@ -42,8 +44,9 @@ function updateOnTrack(dt, tiltAngle) {
   // Rolling friction
   ball.vx *= (1 - FRICTION * dt);
 
-  // Forward motion
-  ball.vz = FORWARD_SPEED;
+  // Forward motion modulated by pitch (forward tilt speeds up, backward slows down)
+  const pitchVal = pitch || 0;
+  ball.vz = Math.max(0, Math.min(MAX_SPEED, FORWARD_SPEED * (1 + pitchVal * PITCH_SENSITIVITY)));
 
   // Update position
   ball.x += ball.vx * dt;

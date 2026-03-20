@@ -17,7 +17,7 @@ export function initRenderer() {
 
   // Camera
   camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
-  camera.position.set(0, 4, BALL_START_Z + 8);
+  camera.position.set(0, 4, BALL_START_Z - 8);
   camera.lookAt(0, 0, BALL_START_Z);
 
   // Renderer
@@ -117,7 +117,7 @@ export function updateTrackTilt(tiltAngle) {
 }
 
 export function updateCamera(ballZ) {
-  camera.position.z = ballZ + 8;
+  camera.position.z = ballZ - 8;
   camera.position.y = 4;
   camera.lookAt(0, 0, ballZ);
 }

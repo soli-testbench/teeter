@@ -9,7 +9,7 @@ import {
   getTrackConfig,
 } from './renderer.js';
 
-import { initTracker, detectTilt, resetTilt } from './tracker.js';
+import { initTracker, detectTilt, detectPitch, resetTilt } from './tracker.js';
 import { initPhysics, updatePhysics, resetBall } from './physics.js';
 
 const overlay = document.getElementById('overlay');
@@ -72,11 +72,12 @@ function gameLoop(timestamp) {
   lastTime = timestamp;
 
   if (state === 'playing' || state === 'falling') {
-    // Get head tilt
+    // Get head tilt and pitch
     const tiltAngle = detectTilt(timestamp);
+    const pitch = detectPitch();
 
     // Update physics
-    const result = updatePhysics(dt, tiltAngle);
+    const result = updatePhysics(dt, tiltAngle, pitch);
 
     // Update renderer
     updateBallPosition(result.x, result.y, result.z);
