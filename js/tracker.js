@@ -17,6 +17,9 @@ let rawPitch = 0;
 let smoothedPitch = 0;
 const SMOOTHING_FACTOR = 0.7;
 
+// Calibration offset: the face X position at neutral/center
+let calibrationOffset = 0.5;
+
 export async function initTracker(stream) {
   // Create hidden video element — never added to DOM
   videoElement = document.createElement('video');
@@ -43,6 +46,18 @@ export async function initTracker(stream) {
   });
 }
 
+export function calibrate(timestamp) {
+  if (!faceLandmarker || !videoElement || videoElement.readyState < 2) return;
+
+  const results = faceLandmarker.detectForVideo(videoElement, timestamp);
+  if (results.faceLandmarks && results.faceLandmarks.length > 0) {
+    const landmarks = results.faceLandmarks[0];
+    const leftEye = landmarks[LEFT_EYE_OUTER];
+    const rightEye = landmarks[RIGHT_EYE_OUTER];
+    calibrationOffset = (leftEye.x + rightEye.x) / 2;
+  }
+}
+
 export function detectTilt(timestamp) {
   if (!faceLandmarker || !videoElement || videoElement.readyState < 2) {
     return smoothedTilt;
@@ -55,14 +70,15 @@ export function detectTilt(timestamp) {
     const leftEye = landmarks[LEFT_EYE_OUTER];
     const rightEye = landmarks[RIGHT_EYE_OUTER];
 
-    // Negate tilt to mirror horizontal mapping (webcam is mirrored)
-    rawTilt = -Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x);
+    // Absolute horizontal face position (normalized 0..1)
+    const faceX = (leftEye.x + rightEye.x) / 2;
+    // Mirror and subtract calibration offset so center = 0
+    rawTilt = -(faceX - calibrationOffset);
     smoothedTilt = smoothedTilt * SMOOTHING_FACTOR + rawTilt * (1 - SMOOTHING_FACTOR);
 
     // Compute pitch from the same detection result
     const nose = landmarks[NOSE_TIP];
     const forehead = landmarks[FOREHEAD];
-    // Positive pitch = head tilted forward (nose down relative to forehead)
     rawPitch = nose.y - forehead.y;
     smoothedPitch = smoothedPitch * SMOOTHING_FACTOR + rawPitch * (1 - SMOOTHING_FACTOR);
   }

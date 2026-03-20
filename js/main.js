@@ -16,7 +16,7 @@ import {
   hideTurtle,
 } from './renderer.js';
 
-import { initTracker, detectTilt, detectPitch, resetTilt } from './tracker.js';
+import { initTracker, calibrate, detectTilt, detectPitch, resetTilt } from './tracker.js';
 import { initPhysics, updatePhysics, resetBall, refreshLevel } from './physics.js';
 
 const overlay = document.getElementById('overlay');
@@ -175,6 +175,7 @@ function exitGameOver() {
   initPhysics(config);
   slowdownIndicator.classList.remove('visible');
   resetTilt();
+  calibrate(performance.now());
   resetBallRotation();
   updateScore(0);
   updateBallPosition(0, config.trackHeight / 2 + config.ballRadius, config.ballStartZ);
@@ -243,6 +244,9 @@ async function init() {
 
     // Initialize head tracker
     await initTracker(stream);
+
+    // Calibrate neutral head position
+    calibrate(performance.now());
 
     // Hide overlay, show score and leaderboard button, and start game
     overlay.classList.add('hidden');
