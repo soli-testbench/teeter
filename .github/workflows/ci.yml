@@ -1,0 +1,19 @@
+name: CI
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '.github/**'
+  push:
+    branches-ignore: [main]
+    paths-ignore:
+      - '.github/**'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Dockerfile exists
+        run: test -f Dockerfile || (echo "::error::No Dockerfile found" && exit 1)
+      - name: Test Docker build
+        run: docker build .
