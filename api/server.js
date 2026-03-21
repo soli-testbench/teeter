@@ -10,6 +10,16 @@ const MAX_BODY = 1024;
 const MAX_NAME_LENGTH = 15;
 const MAX_SCORE_VALUE = 999999;
 
+// Optional API key for score submission. When set via SCORE_API_KEY env var,
+// POST requests must include an "X-API-Key" header matching this value.
+// When unset, submissions are open (protected only by rate limiting + CORS).
+const SCORE_API_KEY = process.env.SCORE_API_KEY || '';
+
+// Deployment model: this server is designed for single-instance deployments
+// (one container with a persistent /data volume). The JSON file store is not
+// safe for multi-replica use — if horizontal scaling is needed, replace the
+// file store with a shared external datastore (e.g. Redis or a database).
+
 // Rate limiting: max POST requests per IP within a sliding window.
 // 5 POSTs/min/IP is sufficient for a game leaderboard (one score per
 // completed game) and limits abuse surface.
@@ -132,6 +142,12 @@ const server = http.createServer((req, res) => {
     const clientIp = (isLoopback && req.headers['x-real-ip']) ? req.headers['x-real-ip'] : peerIp || 'unknown';
     if (isRateLimited(clientIp)) {
       sendError(res, 429, 'Too many requests. Try again later.');
+      return;
+    }
+
+    // Enforce API key when configured (defense-in-depth against anonymous abuse)
+    if (SCORE_API_KEY && req.headers['x-api-key'] !== SCORE_API_KEY) {
+      sendError(res, 401, 'Invalid or missing API key');
       return;
     }
 

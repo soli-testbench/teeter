@@ -320,6 +320,113 @@ async function run() {
     assert.ok(rateLimited, 'Expected rate limiting (429) but it never triggered');
   });
 
+  // --- API key authentication ---
+  // Spawn a server with SCORE_API_KEY set to verify auth enforcement.
+  await test('POST without API key returns 401 when SCORE_API_KEY is set', async () => {
+    const akPort = PORT + 2;
+    const akDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-ak-'));
+    const akPatched = serverSrc
+      .replace(/const PORT = \d+;/, `const PORT = ${akPort};`)
+      .replace(/const DATA_DIR = '[^']+';/, `const DATA_DIR = '${akDir.replace(/\\/g, '/')}';`)
+      .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;');
+    const akPath = path.join(akDir, 'server.ak.js');
+    fs.writeFileSync(akPath, akPatched);
+    const akProc = spawn(process.execPath, [akPath], {
+      stdio: 'pipe',
+      env: { ...process.env, SCORE_API_KEY: 'test-secret-key' },
+    });
+    akProc.stderr.on('data', () => {});
+    akProc.stdout.on('data', () => {});
+
+    // Wait for server to start
+    for (let i = 0; i < 20; i++) {
+      try {
+        await new Promise((resolve, reject) => {
+          const req = http.request({ hostname: '127.0.0.1', port: akPort, path: '/api/scores', method: 'GET' }, (res) => {
+            res.on('data', () => {});
+            res.on('end', () => resolve());
+          });
+          req.on('error', reject);
+          req.end();
+        });
+        break;
+      } catch {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    }
+
+    // POST without API key — should be rejected
+    const noKeyRes = await new Promise((resolve, reject) => {
+      const data = JSON.stringify({ name: 'NoKey', score: 10 });
+      const req = http.request({
+        hostname: '127.0.0.1', port: akPort, path: '/api/scores', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+      }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => {
+          let json; try { json = JSON.parse(chunks); } catch { json = chunks; }
+          resolve({ status: r.statusCode, body: json });
+        });
+      });
+      req.on('error', reject);
+      req.write(data);
+      req.end();
+    });
+    assert.strictEqual(noKeyRes.status, 401, 'Expected 401 without API key');
+
+    // POST with wrong API key — should be rejected
+    const wrongKeyRes = await new Promise((resolve, reject) => {
+      const data = JSON.stringify({ name: 'WrongKey', score: 10 });
+      const req = http.request({
+        hostname: '127.0.0.1', port: akPort, path: '/api/scores', method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(data),
+          'X-API-Key': 'wrong-key',
+        },
+      }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => {
+          let json; try { json = JSON.parse(chunks); } catch { json = chunks; }
+          resolve({ status: r.statusCode, body: json });
+        });
+      });
+      req.on('error', reject);
+      req.write(data);
+      req.end();
+    });
+    assert.strictEqual(wrongKeyRes.status, 401, 'Expected 401 with wrong API key');
+
+    // POST with correct API key — should succeed
+    const goodKeyRes = await new Promise((resolve, reject) => {
+      const data = JSON.stringify({ name: 'GoodKey', score: 10 });
+      const req = http.request({
+        hostname: '127.0.0.1', port: akPort, path: '/api/scores', method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(data),
+          'X-API-Key': 'test-secret-key',
+        },
+      }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => {
+          let json; try { json = JSON.parse(chunks); } catch { json = chunks; }
+          resolve({ status: r.statusCode, body: json });
+        });
+      });
+      req.on('error', reject);
+      req.write(data);
+      req.end();
+    });
+    assert.strictEqual(goodKeyRes.status, 201, 'Expected 201 with correct API key');
+
+    akProc.kill('SIGTERM');
+    try { fs.rmSync(akDir, { recursive: true }); } catch {}
+  });
+
   // --- Concurrent write integrity test ---
   await test('Concurrent POSTs do not lose updates', async () => {
     // Reset scores file to empty state
