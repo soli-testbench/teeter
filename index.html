@@ -103,6 +103,11 @@
     #gameover-box .go-score {
       font-size: 1.4em;
       opacity: 0.8;
+      margin-bottom: 8px;
+    }
+    #gameover-box .go-time {
+      font-size: 1.2em;
+      opacity: 0.7;
       margin-bottom: 24px;
     }
     #gameover-box .go-message {
@@ -224,6 +229,23 @@
     #leaderboard-close:hover {
       background: rgba(255,255,255,0.1);
     }
+    #timer {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 1.4em;
+      font-weight: 700;
+      z-index: 10;
+      pointer-events: none;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      background: rgba(0,0,0,0.3);
+      padding: 6px 14px;
+      border-radius: 8px;
+      display: none;
+    }
     #slowdown-indicator {
       position: fixed;
       bottom: 50px;
@@ -267,6 +289,7 @@
 </head>
 <body>
   <div id="score">Score: 0</div>
+  <div id="timer">0.0s</div>
   <button id="leaderboard-btn">Leaderboard</button>
   <div id="overlay">
     <div class="title">TEETER</div>
@@ -276,6 +299,7 @@
     <div id="gameover-box">
       <div class="go-title">GAME OVER</div>
       <div class="go-score"></div>
+      <div class="go-time"></div>
       <div class="go-message"></div>
       <div id="name-entry">
         <label for="name-input">Enter your name:</label>
