@@ -71,7 +71,7 @@ function writeScores(scores) {
 // before executing fn, ensuring read-modify-write is atomic.
 let _writeLock = Promise.resolve();
 function withWriteLock(fn) {
-  _writeLock = _writeLock.then(fn, fn);
+  _writeLock = _writeLock.then(fn, () => fn());
   return _writeLock;
 }
 
@@ -90,6 +90,11 @@ function sendError(res, statusCode, message) {
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
+
+  if (url.pathname === '/api/health') {
+    sendJSON(res, 200, { status: 'ok' });
+    return;
+  }
 
   if (url.pathname !== '/api/scores') {
     sendError(res, 404, 'Not found');
@@ -163,12 +168,16 @@ const server = http.createServer((req, res) => {
       }
 
       withWriteLock(() => {
-        const scores = readScores();
-        scores.push({ name, score });
-        scores.sort((a, b) => b.score - a.score);
-        const trimmed = scores.slice(0, MAX_SCORES);
-        writeScores(trimmed);
-        sendJSON(res, 201, trimmed);
+        try {
+          const scores = readScores();
+          scores.push({ name, score });
+          scores.sort((a, b) => b.score - a.score);
+          const trimmed = scores.slice(0, MAX_SCORES);
+          writeScores(trimmed);
+          sendJSON(res, 201, trimmed);
+        } catch (err) {
+          sendError(res, 500, 'Internal server error');
+        }
       });
     });
 
