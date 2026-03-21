@@ -3,6 +3,25 @@ mkdir -p /data
 chown appuser:appuser /data
 chmod 700 /data
 
+# --- Process model: nginx + supervised Node.js API ---
+# This container runs two processes:
+#   1. nginx (PID 1's child) — serves static files and proxies /api/* to the
+#      Node.js backend on 127.0.0.1:3001.
+#   2. Node.js API (background) — handles /api/scores and /api/challenge.
+#
+# Operational impact compared to nginx-only:
+#   - If the API process crashes, nginx continues serving the static game.
+#     The frontend detects API unavailability and falls back to localStorage
+#     for leaderboard data. The degraded window lasts until the supervisor
+#     restarts the API (typically ~2 seconds, or up to RECOVERY_PAUSE seconds
+#     if the crash budget is exhausted).
+#   - If nginx exits, the container stops (nginx is the foreground process).
+#   - The HEALTHCHECK verifies both nginx and the API are healthy. During an
+#     API crash-recovery window, the health check fails, signaling orchestrators
+#     (Docker Swarm, Kubernetes, etc.) to take appropriate action.
+#   - The crash sentinel file (/tmp/api_crash_exhausted) is set during the
+#     recovery cooldown so external monitoring can detect the degraded state.
+#
 # --- Crash-budget policy with supervised recovery ---
 # The API process is restarted up to MAX_RETRIES times within a sliding
 # RETRY_WINDOW (seconds). If the budget is exhausted, the supervisor

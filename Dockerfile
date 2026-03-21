@@ -43,6 +43,22 @@ VOLUME /data
 # endpoint then relies on challenge tokens, rate limiting, cooldown, and
 # CORS/CSP restrictions.
 EXPOSE 8080
+# --- Production deployment ---
+# Required environment variables for production:
+#   NODE_ENV=production      — enforces SCORE_API_KEY requirement; server refuses
+#                              to start without it.
+#   SCORE_API_KEY=<secret>   — shared secret for authenticating POST /api/scores.
+#                              Route browser submissions through a backend proxy
+#                              that injects this key after user authentication.
+#
+# Optional tuning (with defaults):
+#   API_MAX_RETRIES=5        — max API crash restarts within the retry window
+#   API_RETRY_WINDOW=60      — retry window length in seconds
+#   API_RECOVERY_PAUSE=60    — seconds to wait before resetting crash budget
+#
+# Example:
+#   docker run -e NODE_ENV=production -e SCORE_API_KEY=mysecret -v scores:/data -p 8080:8080 ball-game
+#
 # Health check verifies both nginx and API backend are up.
 # If the crash sentinel (/tmp/api_crash_exhausted) exists, the API has
 # exhausted its restart budget and is in recovery cooldown. The supervisor
