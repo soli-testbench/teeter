@@ -18,7 +18,9 @@ const MAX_SCORE_VALUE = 999999;
 // would provide no real security (any user can read it from DevTools).
 //
 // Defense-in-depth layers that protect the leaderboard without auth:
-// - Rate limiting (5 POST/min/IP) bounds casual abuse volume.
+// - Rate limiting (3 POST/min/IP) bounds casual abuse volume.
+// - Per-IP cooldown (10s between successful submissions) prevents rapid-fire.
+// - Duplicate detection rejects exact name+score replays already on the board.
 // - Body-size cap (1024 B) and input validation reject malformed payloads.
 // - Server binds to 127.0.0.1 only; nginx proxies external traffic and
 //   sets X-Real-IP, so clients cannot spoof their IP directly.
@@ -48,14 +50,19 @@ if (SCORE_API_KEY) {
 // file store with a shared external datastore (e.g. Redis or a database).
 
 // Rate limiting: max POST requests per IP within a sliding window.
-// 5 POSTs/min/IP is sufficient for a game leaderboard (one score per
+// 3 POSTs/min/IP is sufficient for a game leaderboard (one score per
 // completed game) and limits abuse surface.
 // Note: in-memory state resets on server restart. This is acceptable because
 // the bounded restart loop in start.sh (max 5 restarts/60s) limits how
 // often the counter resets, and the threat model is casual abuse, not DDoS.
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-const RATE_LIMIT_MAX_POSTS = 5;
+const RATE_LIMIT_MAX_POSTS = 3;
 const rateLimitMap = new Map();
+
+// Cooldown: minimum interval between successful score submissions per IP.
+// Prevents automated rapid-fire submissions even within the rate limit window.
+const SCORE_COOLDOWN_MS = 10 * 1000; // 10 seconds
+const lastSubmitMap = new Map();
 
 function isRateLimited(ip) {
   const now = Date.now();
@@ -75,7 +82,7 @@ function isRateLimited(ip) {
   return false;
 }
 
-// Periodically clean up stale rate-limit entries to prevent memory leak
+// Periodically clean up stale rate-limit and cooldown entries to prevent memory leak
 setInterval(() => {
   const now = Date.now();
   for (const [ip, timestamps] of rateLimitMap) {
@@ -83,6 +90,9 @@ setInterval(() => {
       timestamps.shift();
     }
     if (timestamps.length === 0) rateLimitMap.delete(ip);
+  }
+  for (const [ip, ts] of lastSubmitMap) {
+    if (ts <= now - SCORE_COOLDOWN_MS) lastSubmitMap.delete(ip);
   }
 }, RATE_LIMIT_WINDOW_MS).unref();
 
@@ -178,6 +188,13 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    // Cooldown: reject if this IP submitted a score too recently
+    const lastSubmit = lastSubmitMap.get(clientIp);
+    if (lastSubmit && (Date.now() - lastSubmit) < SCORE_COOLDOWN_MS) {
+      sendError(res, 429, 'Please wait before submitting another score.');
+      return;
+    }
+
     let body = '';
     let tooLarge = false;
 
@@ -229,10 +246,20 @@ const server = http.createServer((req, res) => {
       withWriteLock(() => {
         try {
           const scores = readScores();
+
+          // Anomaly check: reject exact duplicate name+score from same request
+          // (protects against replay-style abuse)
+          const isDuplicate = scores.some(e => e.name === name && e.score === score);
+          if (isDuplicate) {
+            sendError(res, 409, 'Duplicate score entry');
+            return;
+          }
+
           scores.push({ name, score });
           scores.sort((a, b) => b.score - a.score);
           const trimmed = scores.slice(0, MAX_SCORES);
           writeScores(trimmed);
+          lastSubmitMap.set(clientIp, Date.now());
           sendJSON(res, 201, trimmed);
         } catch (err) {
           sendError(res, 500, 'Internal server error');

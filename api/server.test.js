@@ -97,7 +97,8 @@ async function run() {
   const patched = serverSrc
     .replace(/const PORT = \d+;/, `const PORT = ${PORT};`)
     .replace(/const DATA_DIR = '[^']+';/, `const DATA_DIR = '${tmpDir.replace(/\\/g, '/')}';`)
-    .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;');
+    .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;')
+    .replace(/const SCORE_COOLDOWN_MS = [\d* ]+;/, 'const SCORE_COOLDOWN_MS = 0;');
   const patchedPath = path.join(tmpDir, 'server.patched.js');
   fs.writeFileSync(patchedPath, patched);
 
@@ -269,7 +270,8 @@ async function run() {
     const rlPatched = serverSrc
       .replace(/const PORT = \d+;/, `const PORT = ${rlPort};`)
       .replace(/const DATA_DIR = '[^']+';/, `const DATA_DIR = '${rlDir.replace(/\\/g, '/')}';`)
-      .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 3;');
+      .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 3;')
+      .replace(/const SCORE_COOLDOWN_MS = [\d* ]+;/, 'const SCORE_COOLDOWN_MS = 0;');
     const rlPath = path.join(rlDir, 'server.rl.js');
     fs.writeFileSync(rlPath, rlPatched);
     const rlProc = spawn(process.execPath, [rlPath], { stdio: 'pipe' });
@@ -296,7 +298,7 @@ async function run() {
     let rateLimited = false;
     for (let i = 0; i < 6; i++) {
       const res = await new Promise((resolve, reject) => {
-        const data = JSON.stringify({ name: 'Flood', score: 1 });
+        const data = JSON.stringify({ name: `Flood${i}`, score: i + 1 });
         const req = http.request({
           hostname: '127.0.0.1', port: rlPort, path: '/api/scores', method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
@@ -328,7 +330,8 @@ async function run() {
     const akPatched = serverSrc
       .replace(/const PORT = \d+;/, `const PORT = ${akPort};`)
       .replace(/const DATA_DIR = '[^']+';/, `const DATA_DIR = '${akDir.replace(/\\/g, '/')}';`)
-      .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;');
+      .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;')
+      .replace(/const SCORE_COOLDOWN_MS = [\d* ]+;/, 'const SCORE_COOLDOWN_MS = 0;');
     const akPath = path.join(akDir, 'server.ak.js');
     fs.writeFileSync(akPath, akPatched);
     const akProc = spawn(process.execPath, [akPath], {
@@ -434,7 +437,8 @@ async function run() {
     const prodPatched = serverSrc
       .replace(/const PORT = \d+;/, `const PORT = ${prodPort};`)
       .replace(/const DATA_DIR = '[^']+';/, `const DATA_DIR = '${prodDir.replace(/\\/g, '/')}';`)
-      .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;');
+      .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;')
+      .replace(/const SCORE_COOLDOWN_MS = [\d* ]+;/, 'const SCORE_COOLDOWN_MS = 0;');
     const prodPath = path.join(prodDir, 'server.prod.js');
     fs.writeFileSync(prodPath, prodPatched);
 
@@ -493,6 +497,91 @@ async function run() {
 
     prodProc.kill('SIGTERM');
     try { fs.rmSync(prodDir, { recursive: true }); } catch {}
+  });
+
+  // --- Duplicate detection ---
+  await test('POST with duplicate name+score returns 409', async () => {
+    // Reset scores file with a known entry
+    fs.writeFileSync(path.join(tmpDir, 'scores.json'), JSON.stringify([{ name: 'DupTest', score: 42 }]), 'utf8');
+    const res = await request('POST', { name: 'DupTest', score: 42 });
+    assert.strictEqual(res.status, 409, 'Expected 409 for duplicate name+score');
+    assert.ok(res.body.error.includes('Duplicate'), 'Expected duplicate error message');
+  });
+
+  await test('POST with same name but different score is allowed', async () => {
+    fs.writeFileSync(path.join(tmpDir, 'scores.json'), JSON.stringify([{ name: 'DupTest', score: 42 }]), 'utf8');
+    const res = await request('POST', { name: 'DupTest', score: 43 });
+    assert.strictEqual(res.status, 201, 'Expected 201 for different score');
+  });
+
+  // --- Cooldown enforcement ---
+  // Spawn a server with cooldown enabled to verify enforcement.
+  await test('Cooldown rejects rapid successive submissions', async () => {
+    const cdPort = PORT + 4;
+    const cdDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-cd-'));
+    const cdPatched = serverSrc
+      .replace(/const PORT = \d+;/, `const PORT = ${cdPort};`)
+      .replace(/const DATA_DIR = '[^']+';/, `const DATA_DIR = '${cdDir.replace(/\\/g, '/')}';`)
+      .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;')
+      .replace(/const SCORE_COOLDOWN_MS = [\d* ]+;/, 'const SCORE_COOLDOWN_MS = 60000;');
+    const cdPath = path.join(cdDir, 'server.cd.js');
+    fs.writeFileSync(cdPath, cdPatched);
+    const cdProc = spawn(process.execPath, [cdPath], { stdio: 'pipe' });
+    cdProc.stderr.on('data', () => {});
+    cdProc.stdout.on('data', () => {});
+
+    for (let i = 0; i < 20; i++) {
+      try {
+        await new Promise((resolve, reject) => {
+          const req = http.request({ hostname: '127.0.0.1', port: cdPort, path: '/api/scores', method: 'GET' }, (res) => {
+            res.on('data', () => {});
+            res.on('end', () => resolve());
+          });
+          req.on('error', reject);
+          req.end();
+        });
+        break;
+      } catch {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    }
+
+    // First POST — should succeed
+    const first = await new Promise((resolve, reject) => {
+      const data = JSON.stringify({ name: 'CD1', score: 10 });
+      const req = http.request({
+        hostname: '127.0.0.1', port: cdPort, path: '/api/scores', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+      }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => resolve({ status: r.statusCode }));
+      });
+      req.on('error', reject);
+      req.write(data);
+      req.end();
+    });
+    assert.strictEqual(first.status, 201, 'First POST should succeed');
+
+    // Second POST — should be rejected by cooldown
+    const second = await new Promise((resolve, reject) => {
+      const data = JSON.stringify({ name: 'CD2', score: 20 });
+      const req = http.request({
+        hostname: '127.0.0.1', port: cdPort, path: '/api/scores', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+      }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => resolve({ status: r.statusCode }));
+      });
+      req.on('error', reject);
+      req.write(data);
+      req.end();
+    });
+    assert.strictEqual(second.status, 429, 'Second POST should be rejected by cooldown');
+
+    cdProc.kill('SIGTERM');
+    try { fs.rmSync(cdDir, { recursive: true }); } catch {}
   });
 
   // --- Concurrent write integrity test ---
