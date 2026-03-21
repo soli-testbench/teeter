@@ -87,10 +87,6 @@ function updateOnTrack(dt, tiltAngle, pitch) {
   const effectiveForward = slowdownActive ? FORWARD_SPEED / 2 : FORWARD_SPEED;
   const effectiveMax = slowdownActive ? MAX_SPEED / 2 : MAX_SPEED;
 
-  // Direct lateral velocity from head tilt with smooth interpolation
-  const targetVx = -tiltAngle * DIRECT_SENSITIVITY;
-  ball.vx += (targetVx - ball.vx) * RESPONSE_RATE * dt;
-
   // Get tangent at current position for slope calculation
   const clampedT = Math.max(0, Math.min(1, ball.t));
   const tangent = curve.getTangentAt(clampedT);
