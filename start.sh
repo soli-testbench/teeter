@@ -31,7 +31,11 @@ RETRY_WINDOW=60
     echo "WARN: Node API exited with status $exit_code (failure $failures/$MAX_RETRIES in ${elapsed}s window)." >&2
 
     if [ "$failures" -ge "$MAX_RETRIES" ]; then
-      echo "ERROR: Node API crashed $MAX_RETRIES times within ${RETRY_WINDOW}s — giving up." >&2
+      echo "ERROR: Node API crashed $MAX_RETRIES times within ${RETRY_WINDOW}s — giving up. Leaderboard API is unavailable." >&2
+      # Write sentinel so external health checks can detect API crash-loop exhaustion.
+      # The Docker HEALTHCHECK already fails because nginx returns 502 for /api/health
+      # when the API backend is down, but this file provides an additional signal.
+      echo "API_CRASHED=$(date -Iseconds) failures=$MAX_RETRIES window=${RETRY_WINDOW}s" > /tmp/api_crash_exhausted
       break
     fi
 
