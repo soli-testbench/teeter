@@ -27,7 +27,8 @@ const MAX_SCORE_VALUE = 999999;
 // - Body-size cap (1024 B) and input validation reject malformed payloads.
 // - Server binds to 127.0.0.1 only; nginx proxies external traffic and
 //   sets X-Real-IP, so clients cannot spoof their IP directly.
-// - CORS headers are not sent, so cross-origin browser requests are blocked.
+// - No Access-Control-Allow-Origin header is sent; Vary: Origin signals
+//   intent. Cross-origin browser requests are blocked by CORS policy.
 // - CSP connect-src 'self' prevents scripts on other origins from hitting /api.
 // - Score plausibility: positive integers only, capped at MAX_SCORE_VALUE.
 //
@@ -165,9 +166,18 @@ function withWriteLock(fn) {
   return _writeLock;
 }
 
+// CORS denial headers: explicitly block cross-origin requests as defense-in-depth.
+// Browsers already block cross-origin fetch when no Access-Control-Allow-Origin is
+// present, but sending a restrictive Vary header and omitting ACAO makes the intent
+// explicit. This supplements nginx CSP connect-src: 'self'.
+const COMMON_HEADERS = {
+  'Vary': 'Origin',
+};
+
 function sendJSON(res, statusCode, data) {
   const body = JSON.stringify(data);
   res.writeHead(statusCode, {
+    ...COMMON_HEADERS,
     'Content-Type': 'application/json',
     'Content-Length': Buffer.byteLength(body),
   });
@@ -185,7 +195,7 @@ const server = http.createServer((req, res) => {
   // so browsers will block cross-origin requests. This is defense-in-depth
   // alongside nginx proxy and CSP connect-src: 'self'.
   if (req.method === 'OPTIONS') {
-    res.writeHead(204);
+    res.writeHead(204, COMMON_HEADERS);
     res.end();
     return;
   }
