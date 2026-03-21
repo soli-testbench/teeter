@@ -33,9 +33,25 @@ RUN nginx -t
 # Persistent storage for scores.json. Operators should back up this volume
 # according to their retention policy; data is non-critical (game scores).
 VOLUME /data
+# --- Deployment security policy ---
 # Default: shared leaderboard enabled with anonymous browser submissions.
-# Challenge tokens, rate limiting, and per-IP cooldown provide abuse resistance.
-# Optional: set SCORE_API_KEY for server-to-server auth (see api/server.js).
+# This is the intended configuration for a casual game leaderboard where
+# user accounts are not required. Abuse resistance is provided by:
+#   - Challenge tokens (one-time, IP-bound, 5-min TTL, max 5 pending/IP)
+#   - Rate limiting (3 POST/min/IP)
+#   - Per-IP cooldown (10s between submissions)
+#   - Duplicate detection, input validation, CORS denial
+# Accepted risk: determined attacker with multiple IPs could insert fake scores.
+#
+# To require authenticated submissions (server-to-server):
+#   docker run -e SCORE_API_KEY=<secret> -e ALLOW_ANONYMOUS_SCORES=false ...
+# To disable the leaderboard API entirely:
+#   docker run -e ALLOW_ANONYMOUS_SCORES=false ...
+#   (server will refuse to start without SCORE_API_KEY or explicit opt-in)
+#
+# IMPORTANT: If deploying outside localhost/Docker internal networking,
+# place an HTTPS-terminating reverse proxy (e.g. Cloudflare, ALB, Caddy)
+# in front of port 8080. The nginx config does not terminate TLS itself.
 ENV NODE_ENV=production
 ENV ALLOW_ANONYMOUS_SCORES=true
 EXPOSE 8080
