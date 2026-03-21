@@ -2,18 +2,17 @@
 # when security patches are released for nginx 1.27.x or Alpine 3.21.
 FROM nginx:1.27.5-alpine3.21
 # Install Node.js LTS from Alpine 3.21 official packages.
-# Pinned to 22.x series via apk constraint — Node.js 22 is the current LTS
-# release (codename "Jod", active LTS until Oct 2025, maintenance until Apr 2027).
+# Pinned to exact patch version for reproducible, hermetic builds.
+# Node.js 22 is the current LTS release (codename "Jod", active LTS until
+# Oct 2025, maintenance until Apr 2027).
 # Alpine apk packages are signed by the distro maintainers; provenance is
 # verified by apk's built-in signature checking against /etc/apk/keys.
 # No npm/npx or third-party package managers are used — only Node.js stdlib modules.
-# The build will fail if the 22.x package is unavailable, preventing silent downgrades.
 #
-# Update cadence: review and bump the Node.js pin when:
+# Update cadence: bump the pinned version when:
 #   - A new Node.js 22.x patch is released with security fixes, OR
 #   - The base nginx:1.27.5-alpine3.21 image is updated.
-# To lock to a specific patch version, replace 'nodejs~=22' with e.g. 'nodejs=22.13.1-r0'.
-RUN apk add --no-cache 'nodejs~=22' \
+RUN apk add --no-cache 'nodejs=22.15.1-r0' \
  && NODE_VER="$(node -e "process.stdout.write(process.version)")" \
  && echo "Node.js ${NODE_VER} installed from Alpine repos" \
  && echo "${NODE_VER}" | grep -qE '^v22\.' || { echo "ERROR: expected Node.js v22.x, got ${NODE_VER}"; exit 1; }
