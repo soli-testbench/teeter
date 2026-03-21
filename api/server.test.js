@@ -219,6 +219,30 @@ async function run() {
     assert.strictEqual(res.status, 405);
   });
 
+  // --- Oversized POST body ---
+  await test('POST with oversized body returns 413 (no connection reset)', async () => {
+    const bigBody = JSON.stringify({ name: 'X', score: 1, padding: 'A'.repeat(2048) });
+    const res = await new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: '127.0.0.1', port: PORT, path: '/api/scores', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bigBody) },
+      }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => {
+          let json;
+          try { json = JSON.parse(chunks); } catch { json = chunks; }
+          resolve({ status: r.statusCode, body: json });
+        });
+      });
+      req.on('error', reject);
+      req.write(bigBody);
+      req.end();
+    });
+    assert.strictEqual(res.status, 413, 'Expected 413 Payload Too Large');
+    assert.ok(res.body.error.includes('too large'), 'Expected error message about payload size');
+  });
+
   // --- Fallback behavior: corrupted file ---
   await test('GET returns empty array when scores file is corrupted', async () => {
     fs.writeFileSync(path.join(tmpDir, 'scores.json'), 'NOT JSON', 'utf8');

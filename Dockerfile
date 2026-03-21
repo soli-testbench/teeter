@@ -14,6 +14,10 @@ COPY js/ /usr/share/nginx/html/js/
 COPY api/server.js /app/api/server.js
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
+# Create a non-root user for the Node.js API process (defense-in-depth).
+# nginx master still runs as root to manage workers, but the API server
+# drops to this unprivileged user via su in start.sh.
+RUN adduser -D -H -s /sbin/nologin appuser
 RUN nginx -t
 # Persistent storage for scores.json. Operators should back up this volume
 # according to their retention policy; data is non-critical (game scores).

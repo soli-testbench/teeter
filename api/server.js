@@ -133,15 +133,16 @@ const server = http.createServer((req, res) => {
       body += chunk;
       if (body.length > MAX_BODY) {
         tooLarge = true;
-        req.destroy();
+        // Send 413 immediately and consume remaining data to avoid connection reset.
+        // resume() drains any buffered chunks so the client sees a clean HTTP response
+        // instead of a TCP RST.
+        sendError(res, 413, 'Payload too large');
+        req.resume();
       }
     });
 
     req.on('end', () => {
-      if (tooLarge) {
-        sendError(res, 413, 'Payload too large');
-        return;
-      }
+      if (tooLarge) return;
 
       let data;
       try {

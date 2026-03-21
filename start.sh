@@ -1,5 +1,6 @@
 #!/bin/sh
 mkdir -p /data
+chown appuser:appuser /data
 chmod 700 /data
 
 MAX_RETRIES=5
@@ -15,7 +16,7 @@ RETRY_WINDOW=60
 
   while true; do
     echo "INFO: Starting Node API..." >&2
-    node /app/api/server.js
+    su -s /bin/sh appuser -c 'node /app/api/server.js'
     exit_code=$?
     now=$(date +%s)
     elapsed=$((now - window_start))
