@@ -36,17 +36,22 @@ VOLUME /data
 # SCORE_API_KEY: Required in production (NODE_ENV=production), optional for local/demo.
 # The server refuses to start in production mode without SCORE_API_KEY set.
 # When set, POST /api/scores requires a matching X-API-Key header.
-# Production deployment: set both NODE_ENV=production and SCORE_API_KEY via
-# docker run -e or compose env, and route submissions through a backend
-# proxy that injects the key after authenticating users.
-# For local/demo use, leave NODE_ENV unset (defaults to development) — the
-# endpoint then relies on challenge tokens, rate limiting, cooldown, and
-# CORS/CSP restrictions.
+# Production deployment: set SCORE_API_KEY via docker run -e or compose env,
+# and route submissions through a backend proxy that injects the key after
+# authenticating users. NODE_ENV defaults to production in this image.
+# For local/demo use, pass -e NODE_ENV=development to opt into anonymous
+# mode — the endpoint then relies on challenge tokens, rate limiting,
+# cooldown, and CORS/CSP restrictions.
+# Default to production mode in Docker builds so that SCORE_API_KEY is
+# enforced unless explicitly overridden. Operators running local/demo
+# containers can pass -e NODE_ENV=development to opt into anonymous mode.
+ENV NODE_ENV=production
 EXPOSE 8080
 # --- Production deployment ---
-# Required environment variables for production:
-#   NODE_ENV=production      — enforces SCORE_API_KEY requirement; server refuses
-#                              to start without it.
+# NODE_ENV defaults to production in this image. The server refuses to start
+# without SCORE_API_KEY when in production mode.
+#
+# Required environment variable:
 #   SCORE_API_KEY=<secret>   — shared secret for authenticating POST /api/scores.
 #                              Route browser submissions through a backend proxy
 #                              that injects this key after user authentication.
@@ -56,8 +61,11 @@ EXPOSE 8080
 #   API_RETRY_WINDOW=60      — retry window length in seconds
 #   API_RECOVERY_PAUSE=60    — seconds to wait before resetting crash budget
 #
-# Example:
-#   docker run -e NODE_ENV=production -e SCORE_API_KEY=mysecret -v scores:/data -p 8080:8080 ball-game
+# Example (production — default):
+#   docker run -e SCORE_API_KEY=mysecret -v scores:/data -p 8080:8080 ball-game
+#
+# Example (local/demo — anonymous mode):
+#   docker run -e NODE_ENV=development -v scores:/data -p 8080:8080 ball-game
 #
 # Health check verifies both nginx and API backend are up.
 # If the crash sentinel (/tmp/api_crash_exhausted) exists, the API has
