@@ -758,10 +758,6 @@ export function hideCoin(index) {
   }
 }
 
-export function showAllCoins() {
-  coinMeshes.forEach((m) => { m.visible = true; });
-}
-
 export function updateCoinRotation(dt) {
   coinMeshes.forEach((m) => {
     if (m.visible) {
