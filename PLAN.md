@@ -1,99 +1,124 @@
-# Plan: Add Turtle Slow-Down Powerup
+# Plan: Curved Track with Downhill Slope and Finish Line
 
-## Overview
+## Summary
 
-Add a collectible turtle-shaped powerup that halves ball speed for 4 seconds when collected. Follows the existing coin spawn/collection pattern across renderer.js, physics.js, main.js, and index.html.
+Replace the flat straight BoxGeometry track with a curved, gently downhill course built from a `CatmullRomCurve3` centerline. The ball's physics are rewritten to operate in **curve-local coordinates** (distance-along-curve `t` + lateral offset `d`), which naturally handles turns and slopes. The camera follows the curve tangent. A finish line mesh marks course end and triggers a "finished" game state.
 
 ## Codebase Analysis
 
 - **Tech stack**: Pure static HTML+JS (ES modules), Three.js v0.183.2 via CDN importmap, served by nginx in Docker
 - **Key files**: `index.html` (HTML/CSS/UI), `js/main.js` (game loop, state), `js/physics.js` (ball physics, collision), `js/renderer.js` (Three.js scene, mesh generation, RNG), `js/tracker.js` (head tracking — DO NOT MODIFY)
-- **Coin pattern**: Generated in `renderer.js` via `generateCoins(rng)`, exported via `getCoins()`, collected in `physics.js` via distance check (`COIN_COLLECT_RADIUS = 0.8`), hidden via `hideCoin(idx)` called from `main.js` game loop
-- **Speed constants**: `FORWARD_SPEED = 2.0`, `MAX_SPEED = 6.0` in physics.js
-- **RNG**: Seeded via `Date.now()` in `generateLevel()`, deterministic `seededRandom()` function
+- **Current track**: Single `BoxGeometry(4.5, 0.2, 50)` centered at origin, ball moves in +Z direction
+- **Current physics**: World-space X/Z coordinates, constant forward speed modulated by pitch, lateral movement from head tilt, wraps at track end
+- **Existing features to preserve**: Obstacles (red boxes), coins (gold tori), turtle powerup (green composite mesh), leaderboard, slowdown indicator, score display
 
-## Technical Approach
+## Architecture
 
-### 1. renderer.js — Turtle Mesh & Spawning
+### Track Representation
 
-**Turtle mesh** (composite Three.js primitives, grouped under `THREE.Group`):
-- Body: `SphereGeometry` scaled flat (scaleY ~0.5), dark green `0x228B22`
-- Head: smaller `SphereGeometry`, positioned at front of body
-- 4 legs: short `CylinderGeometry` positioned at corners
-- Shell detail: slightly larger `SphereGeometry` with darker color on top
+**Centerline curve**: A `CatmullRomCurve3` with ~8–10 control points that create a winding, gently downhill path with 2–3 visible turns. The curve descends about 8–12 units total (roughly 1:10 grade). Control points are hand-placed constants.
 
-**Spawn logic** — new `generateTurtle(rng, obstacles)`:
-- Pick random Z between `SAFE_ZONE_Z + 5` and `TRACK_LENGTH/2 - 3`, avoiding obstacle Z ranges
-- Pick random X within track bounds (±halfTrack - 0.5)
-- Spawn exactly 1 turtle per run
-- Place at `COIN_Y` height (same as coins)
+Example control points (tunable):
+```js
+[
+  (0, 10, 0),       // Start — elevated
+  (0, 9.5, 10),     // Straight entry
+  (3, 8.5, 25),     // Gentle right curve
+  (5, 7.5, 40),     // Continue right
+  (3, 6.5, 55),     // Begin left curve
+  (-3, 5.5, 70),    // Left turn
+  (-5, 4.5, 85),    // Continue left
+  (-2, 3.0, 100),   // Right curve
+  (2, 1.5, 115),    // Straighten out
+  (2, 0.5, 130),    // Final approach
+  (0, 0, 140),      // Finish line
+]
+```
 
-**Exports to add**:
-- `getTurtle()` → returns `{ x, z }` or `null`
-- `hideTurtle()` → hides the mesh
-- Update `regenerateLevel()` to clean up turtle mesh
+**Track mesh**: Built procedurally using `BufferGeometry`. Sample the centerline at ~200 evenly-spaced points. At each point, compute the tangent (forward) and lateral (cross product of tangent × world-up, normalized) vectors. Extend the surface ±`TRACK_WIDTH/2` laterally to form a flat ribbon of triangle-strip quads. This produces a road surface that follows curves and slopes naturally.
 
-### 2. physics.js — Collection & Speed Modifier
+**Edge lines**: Thin meshes along each edge, built from the same sampling points.
 
-**New state variables**:
-- `turtle` (position object or null)
-- `turtleCollected` (boolean)
-- `slowdownActive` (boolean)
-- `slowdownTimer` (float, seconds remaining)
-- `SLOWDOWN_DURATION = 4` (constant)
-- `TURTLE_COLLECT_RADIUS = 0.8`
+**Finish line**: A striped quad (black/white checkerboard pattern via canvas texture) at curve `t=1.0`, spanning full track width.
 
-**In `initPhysics(config)`**: Accept `config.turtle`, reset slowdown state.
+### Physics — Curve-Local Coordinates
 
-**In `updateOnTrack(dt)`**:
-- Check turtle proximity (same pattern as coins) → set `turtleCollected`, activate slowdown
-- Apply speed modifier: `effectiveForward = slowdownActive ? FORWARD_SPEED / 2 : FORWARD_SPEED`, `effectiveMax = slowdownActive ? MAX_SPEED / 2 : MAX_SPEED`
-- Decrement `slowdownTimer` by `dt`; when ≤ 0, deactivate
-- Re-collecting while active: reset timer to `SLOWDOWN_DURATION` (no further stacking)
-- Return `turtleCollected`, `slowdownActive`, `slowdownTimer` in result object
+The ball state is tracked as:
+- `t` — normalized position along the centerline curve (0.0 = start, 1.0 = end)
+- `d` — lateral offset from centerline (positive = right when facing forward along tangent)
+- `speed` — forward speed along the curve (world units/sec)
+- `lateralSpeed` — lateral speed (world units/sec)
 
-**In `resetBall()`**: Clear all slowdown state.
+Each frame:
+1. **Gravity slope boost**: Compute `tangent = curve.getTangentAt(t)`. The slope angle determines gravity assist: `gravityBoost = -GRAVITY * tangent.y` (tangent.y is negative when going downhill, so boost is positive). Add `gravityBoost * dt` to forward speed.
+2. **Forward motion**: `t += speed * dt / curveLength`. Base speed is `FORWARD_SPEED`, modulated by pitch input and gravity boost. Clamped to `MAX_SPEED`.
+3. **Lateral motion**: `d` updated from head tilt input with same sensitivity/smoothing as before.
+4. **World position**: Convert `(t, d)` to world: `worldPos = curve.getPointAt(t) + lateral * d + up * (trackHeight/2 + ballRadius)`.
+5. **Edge detection**: If `|d| > TRACK_WIDTH/2`, ball falls off.
+6. **Obstacle collision**: Obstacles store their own `t` value and lateral offset `d`. Collision checks compare curve-distance and lateral offset.
+7. **Finish detection**: When `t >= 1.0`, trigger 'finished' state.
 
-### 3. main.js — Wire Collection & UI Indicator
+### Camera
 
-**New imports**: `getTurtle`, `hideTurtle` from renderer.js
+Follow the ball along the curve tangent:
+```js
+const tangent = curve.getTangentAt(ballT);
+const cameraPos = ballWorldPos.clone()
+  .sub(tangent.clone().multiplyScalar(8))
+  .add(new THREE.Vector3(0, 4, 0));
+camera.position.lerp(cameraPos, 0.1); // smooth follow
+camera.lookAt(ballWorldPos);
+```
 
-**In `init()` and `exitGameOver()`**: Pass turtle data to physics config via `config.turtle = getTurtle()`
+### Obstacle & Coin Spawning
 
-**In game loop**:
-- Check `result.turtleCollected` → call `hideTurtle()`
-- Check `result.slowdownActive` → show/hide `#slowdown-indicator`
+Generate obstacles and coins in curve-local space:
+1. Divide the curve into zones by `t` value (skip safe zone at start)
+2. Space obstacles along `t` with minimum spacing (converted from distance)
+3. Place coins between obstacles using lateral offset within track bounds
+4. Convert all `(t, d)` positions to world coordinates for mesh placement
+5. Store `t` values for physics collision checks
 
-**UI indicator element**: Reference `document.getElementById('slowdown-indicator')`
+The turtle powerup uses the same curve-local placement.
 
-### 4. index.html — Indicator Element & CSS
+### Finish Line Game State
 
-**CSS** for `#slowdown-indicator`:
-- `position: fixed; bottom: 50px; left: 50%; transform: translateX(-50%);`
-- Green/teal background, white text, rounded, semi-transparent
-- `display: none` by default, `.visible` shows it
-- `z-index: 10` (same as score), `pointer-events: none`
+New state `'finished'` in main.js:
+- Triggered when physics returns `finished: true` (ball crosses t >= 1.0)
+- Shows an overlay: "COURSE COMPLETE!" with final score
+- Uses same leaderboard qualification flow as game over
+- Player restarts via same mechanism as exitGameOver
 
-**HTML**: `<div id="slowdown-indicator">SLOWED</div>` — placed with other HUD elements
+### Run Timer
+
+Add an elapsed time display during gameplay. When finished, show the time alongside score.
+
+## Affected Files
+
+| File | Changes |
+|------|---------|
+| `js/renderer.js` | Replace BoxGeometry track with curve-based ribbon mesh. Add finish line mesh. Export curve + track data for physics. Rewrite `generateLevel()` for curve-local obstacle/coin placement. Rewrite `updateCamera()` to follow curve tangent. Update shadow camera to follow ball. |
+| `js/physics.js` | Rewrite to use curve-local `(t, d)` coordinates. Add gravity slope acceleration. Replace track-end wrap with finish detection. Obstacles and coins checked in curve-local space. |
+| `js/main.js` | Add `'finished'` game state. Add run timer tracking. Wire finish-line overlay. Update ball position/camera calls for new API. |
+| `index.html` | Add finish overlay HTML/CSS. Add timer display. |
 
 ## Key Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Turtles per run | 1 | Keeps it rare/special, simpler |
-| Slowdown duration | 4 seconds | Middle of 3-5s range from AC |
-| Collection radius | 0.8 | Same as existing coins |
-| Speed effect | Halve FORWARD_SPEED and MAX_SPEED | Directly from AC |
-| Indicator style | Fixed bottom-center text overlay | Visible but not obstructive |
-| Turtle color | Green (0x228B22) | Distinct from red obstacles, gold coins |
+| Track geometry | CatmullRomCurve3 centerline + BufferGeometry ribbon | Smooth curves with simple parameterization; BufferGeometry is most performant for custom mesh |
+| Physics model | Curve-local (t, d) coordinates | Cleanly separates forward/lateral movement on any curve shape; edge detection is trivial |
+| Curve type | 'centripetal' | Prevents cusps and self-intersections on uneven point spacing |
+| Number of turns | 3 (right-left-right) | Meets "at least 2" requirement with variety |
+| Total height drop | ~10 units | Noticeable gravity assist without making it a ski slope |
+| Finish line visual | Checkerboard canvas texture | Immediately recognizable as a finish line |
+| Finish state | Reuses gameover overlay with different title | Minimal new UI, consistent UX |
 
-## Scope: Single Agent
+## Mode: Single
 
-All changes are tightly coupled (mesh → physics → game loop → UI). No meaningful parallelism possible.
+All changes are deeply interconnected. The renderer, physics, and main loop all depend on the same curve data structure and coordinate system. The physics needs the exact curve from the renderer, the main loop needs both physics return values and renderer APIs. A single agent can implement this coherently.
 
-## Files Modified
-
-- `js/renderer.js` — turtle mesh, spawn, show/hide, regenerate cleanup
-- `js/physics.js` — collection check, speed modifier with timer
-- `js/main.js` — wire collection events, UI indicator, pass turtle to physics
-- `index.html` — indicator HTML element and CSS styles
+## Sources
+- Three.js CatmullRomCurve3: https://threejs.org/docs/#api/en/extras/curves/CatmullRomCurve3
+- Three.js BufferGeometry: https://threejs.org/docs/#api/en/core/BufferGeometry
+- Three.js ExtrudeGeometry: https://threejs.org/docs/#api/en/geometries/ExtrudeGeometry
