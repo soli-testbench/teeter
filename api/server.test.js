@@ -765,6 +765,54 @@ async function run() {
     try { fs.rmSync(intDir, { recursive: true }); } catch {}
   });
 
+  // --- Default deployment path (Docker default: NODE_ENV=development, no SCORE_API_KEY) ---
+  // Verifies the shared leaderboard works out of the box without auth configuration.
+  await test('Default deployment: anonymous score submission succeeds (NODE_ENV=development, no API key)', async () => {
+    const defPort = PORT + 7;
+    const defDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-default-'));
+    const defPatched = serverSrc
+      .replace(/const PORT = \d+;/, `const PORT = ${defPort};`)
+      .replace(/const DATA_DIR = '[^']+';/, `const DATA_DIR = '${defDir.replace(/\\/g, '/')}';`)
+      .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;')
+      .replace(/const SCORE_COOLDOWN_MS = [\d* ]+;/, 'const SCORE_COOLDOWN_MS = 0;');
+    const defPath = path.join(defDir, 'server.default.js');
+    fs.writeFileSync(defPath, defPatched);
+
+    // Simulate Docker default: NODE_ENV=development, no SCORE_API_KEY
+    const defEnv = { ...process.env };
+    delete defEnv.SCORE_API_KEY;
+    defEnv.NODE_ENV = 'development';
+    const defProc = spawn(process.execPath, [defPath], { stdio: 'pipe', env: defEnv });
+    defProc.stderr.on('data', () => {});
+    defProc.stdout.on('data', () => {});
+
+    await waitForPort(defPort);
+
+    // Full flow: challenge → POST → verify persisted
+    const postRes = await postWithChallenge(defPort, { name: 'DefaultUser', score: 42 });
+    assert.strictEqual(postRes.status, 201, 'Expected 201 for anonymous POST in default deployment');
+    assert.ok(Array.isArray(postRes.body), 'Expected array response');
+    assert.strictEqual(postRes.body[0].name, 'DefaultUser');
+    assert.strictEqual(postRes.body[0].score, 42);
+
+    // Verify GET returns the score
+    const getRes = await new Promise((resolve, reject) => {
+      const req = http.request({ hostname: '127.0.0.1', port: defPort, path: '/api/scores', method: 'GET' }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => resolve({ status: r.statusCode, body: JSON.parse(chunks) }));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    assert.strictEqual(getRes.status, 200);
+    assert.strictEqual(getRes.body.length, 1);
+    assert.strictEqual(getRes.body[0].name, 'DefaultUser');
+
+    defProc.kill('SIGTERM');
+    try { fs.rmSync(defDir, { recursive: true }); } catch {}
+  });
+
   await test('POST with server-rejected challenge does not modify scores', async () => {
     // Use main server — POST without a valid challenge token should return 403
     // and should NOT modify the score file

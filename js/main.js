@@ -125,7 +125,7 @@ async function addScoreAsync(name, value) {
       // Do NOT fall back to localStorage — honour server-side controls.
       // Return serverRejected: true so the caller can inform the user.
       console.warn('Challenge rejected by server:', challengeRes.status);
-      return { scores: cachedScores.length ? cachedScores : [], serverRejected: true };
+      return { scores: cachedScores.length ? cachedScores : [], serverRejected: true, status: challengeRes.status };
     }
     const { token } = await challengeRes.json();
 
@@ -141,9 +141,9 @@ async function addScoreAsync(name, value) {
       // Server explicitly rejected the submission (4xx/5xx) — do not fall back
       // to local storage, as that would weaken server-enforced integrity
       // (e.g. rate limiting, auth, duplicate detection).
-      // Return serverRejected: true so the caller can inform the user.
+      // Return serverRejected with status so the caller can inform the user.
       console.warn('Score submission rejected by server:', res.status);
-      return { scores: cachedScores.length ? cachedScores : [], serverRejected: true };
+      return { scores: cachedScores.length ? cachedScores : [], serverRejected: true, status: res.status };
     }
     const scores = await res.json();
     if (Array.isArray(scores)) {
@@ -156,7 +156,7 @@ async function addScoreAsync(name, value) {
     if (serverReachable) {
       // Server was reachable but the POST failed unexpectedly (e.g. JSON parse
       // error on response). Treat as server-side issue, don't bypass to local.
-      return { scores: cachedScores.length ? cachedScores : [], serverRejected: true };
+      return { scores: cachedScores.length ? cachedScores : [], serverRejected: true, status: 0 };
     }
     // Server genuinely unreachable — fall back to localStorage
   }
@@ -243,9 +243,16 @@ async function submitScore() {
   const result = await addScoreAsync(name, finalScore);
   nameSubmit.disabled = false;
   if (result.serverRejected) {
-    // Inform the user that the server rejected their score submission
-    // (e.g. rate limit, auth failure, duplicate) rather than silently proceeding.
-    gameoverMessage.textContent = 'Score not saved (server rejected).';
+    // Inform the user that the server rejected their score submission.
+    // Differentiate auth failures from other rejections so operators can
+    // diagnose SCORE_API_KEY / NODE_ENV misconfiguration.
+    if (result.status === 401) {
+      gameoverMessage.textContent = 'Score not saved (authentication required).';
+    } else if (result.status === 429) {
+      gameoverMessage.textContent = 'Score not saved (too many attempts).';
+    } else {
+      gameoverMessage.textContent = 'Score not saved (server rejected).';
+    }
   }
   exitGameOver();
 }

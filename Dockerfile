@@ -33,39 +33,40 @@ RUN nginx -t
 # Persistent storage for scores.json. Operators should back up this volume
 # according to their retention policy; data is non-critical (game scores).
 VOLUME /data
-# SCORE_API_KEY: Required in production (NODE_ENV=production), optional for local/demo.
-# The server refuses to start in production mode without SCORE_API_KEY set.
-# When set, POST /api/scores requires a matching X-API-Key header.
-# Production deployment: set SCORE_API_KEY via docker run -e or compose env,
-# and route submissions through a backend proxy that injects the key after
-# authenticating users. NODE_ENV defaults to production in this image.
-# For local/demo use, pass -e NODE_ENV=development to opt into anonymous
-# mode — the endpoint then relies on challenge tokens, rate limiting,
-# cooldown, and CORS/CSP restrictions.
-# Default to production mode in Docker builds so that SCORE_API_KEY is
-# enforced unless explicitly overridden. Operators running local/demo
-# containers can pass -e NODE_ENV=development to opt into anonymous mode.
-ENV NODE_ENV=production
-EXPOSE 8080
-# --- Production deployment ---
-# NODE_ENV defaults to production in this image. The server refuses to start
-# without SCORE_API_KEY when in production mode.
+# SCORE_API_KEY: Optional. When set, POST /api/scores requires a matching
+# X-API-Key header. Production deployments that need API-key gating should
+# set both NODE_ENV=production and SCORE_API_KEY via docker run -e or
+# compose env, then route browser submissions through a backend proxy that
+# injects the key after authenticating users.
 #
-# Required environment variable:
-#   SCORE_API_KEY=<secret>   — shared secret for authenticating POST /api/scores.
-#                              Route browser submissions through a backend proxy
-#                              that injects this key after user authentication.
+# Default mode: development (anonymous submissions with challenge tokens,
+# rate limiting, cooldown, and CORS/CSP restrictions). This default ensures
+# the shared leaderboard works out of the box — the primary use case for
+# this image. For hardened deployments, set NODE_ENV=production and
+# SCORE_API_KEY explicitly.
+ENV NODE_ENV=development
+EXPOSE 8080
+# --- Deployment ---
+# NODE_ENV defaults to development in this image so the shared leaderboard
+# works out of the box with anonymous submissions (protected by challenge
+# tokens, rate limiting, cooldown, and CORS/CSP restrictions).
+#
+# Optional environment variables:
+#   NODE_ENV=production       — enables strict mode; requires SCORE_API_KEY
+#   SCORE_API_KEY=<secret>    — shared secret for authenticating POST /api/scores.
+#                               Route browser submissions through a backend proxy
+#                               that injects this key after user authentication.
 #
 # Optional tuning (with defaults):
 #   API_MAX_RETRIES=5        — max API crash restarts within the retry window
 #   API_RETRY_WINDOW=60      — retry window length in seconds
 #   API_RECOVERY_PAUSE=60    — seconds to wait before resetting crash budget
 #
-# Example (production — default):
-#   docker run -e SCORE_API_KEY=mysecret -v scores:/data -p 8080:8080 ball-game
+# Example (default — shared leaderboard, anonymous mode):
+#   docker run -v scores:/data -p 8080:8080 ball-game
 #
-# Example (local/demo — anonymous mode):
-#   docker run -e NODE_ENV=development -v scores:/data -p 8080:8080 ball-game
+# Example (production — API-key gated):
+#   docker run -e NODE_ENV=production -e SCORE_API_KEY=mysecret -v scores:/data -p 8080:8080 ball-game
 #
 # Health check verifies both nginx and API backend are up.
 # If the crash sentinel (/tmp/api_crash_exhausted) exists, the API has
