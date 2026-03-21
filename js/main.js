@@ -16,7 +16,7 @@ import {
   hideTurtle,
 } from './renderer.js';
 
-import { initTracker, detectTilt, detectPitch, resetTilt } from './tracker.js';
+import { initTracker, calibrate, detectTilt, detectPitch, resetTilt } from './tracker.js';
 import { initPhysics, updatePhysics, resetBall, refreshLevel } from './physics.js';
 
 const overlay = document.getElementById('overlay');
@@ -175,6 +175,7 @@ function exitGameOver() {
   initPhysics(config);
   slowdownIndicator.classList.remove('visible');
   resetTilt();
+  calibrate(performance.now());
   resetBallRotation();
   updateScore(0);
   updateBallPosition(0, config.trackHeight / 2 + config.ballRadius, config.ballStartZ);
@@ -244,6 +245,9 @@ async function init() {
     // Initialize head tracker
     await initTracker(stream);
 
+    // Calibrate neutral head position
+    calibrate(performance.now());
+
     // Hide overlay, show score and leaderboard button, and start game
     overlay.classList.add('hidden');
     scoreEl.style.display = 'block';
@@ -300,21 +304,25 @@ function gameLoop(timestamp) {
       hideTurtle();
     }
 
-    // Handle track wrap — regenerate level with new layout
-    if (result.wrapped) {
-      regenerateLevel();
-      const newConfig = getTrackConfig();
-      newConfig.obstacles = getObstacles();
-      newConfig.coins = getCoins();
-      newConfig.turtle = getTurtle();
-      refreshLevel(newConfig);
-    }
-
     // Show/hide slowdown indicator
     if (result.slowdownActive) {
       slowdownIndicator.classList.add('visible');
     } else {
       slowdownIndicator.classList.remove('visible');
+    }
+
+    // Handle track completion — regenerate level with fresh coins
+    if (result.trackCompleted) {
+      regenerateLevel();
+      const config = getTrackConfig();
+      config.obstacles = getObstacles();
+      config.coins = getCoins();
+      config.turtle = getTurtle();
+      initPhysics(config);
+      resetBallRotation();
+      slowdownIndicator.classList.remove('visible');
+      updateBallPosition(0, config.trackHeight / 2 + config.ballRadius, config.ballStartZ);
+      updateCamera(config.ballStartZ);
     }
 
     // Handle state transitions

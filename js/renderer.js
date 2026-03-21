@@ -68,6 +68,7 @@ function generateObstacles(rng) {
 function generateCoins(rng, obstacles) {
   const coins = [];
   const halfTrack = TRACK_WIDTH / 2;
+  const halfLength = TRACK_LENGTH / 2;
 
   // Place 2-3 coins between each pair of obstacles
   for (let i = 0; i < obstacles.length; i++) {
@@ -89,7 +90,6 @@ function generateCoins(rng, obstacles) {
   // Coins after the last obstacle
   if (obstacles.length > 0) {
     const lastZ = obstacles[obstacles.length - 1].z + 1;
-    const halfLength = TRACK_LENGTH / 2;
     const gap = halfLength - lastZ;
     if (gap >= 3) {
       const count = 2;
@@ -99,6 +99,20 @@ function generateCoins(rng, obstacles) {
         const cx = (rng() * 2 - 1) * (halfTrack - 0.5);
         coins.push({ x: cx, z: cz });
       }
+    }
+  }
+
+  // Guarantee at least one coin on the track
+  if (coins.length === 0) {
+    const safeStart = SAFE_ZONE_Z + 1;
+    const safeEnd = halfLength - 2;
+    const range = safeEnd - safeStart;
+    const count = Math.max(3, Math.floor(range / 5));
+    const step = range / (count + 1);
+    for (let j = 1; j <= count; j++) {
+      const cz = safeStart + step * j;
+      const cx = (rng() * 2 - 1) * (halfTrack - 0.5);
+      coins.push({ x: cx, z: cz });
     }
   }
 
@@ -196,9 +210,18 @@ const coinMat = new THREE.MeshStandardMaterial({
 });
 
 function generateLevel() {
-  const rng = seededRandom(Date.now());
+  let rng = seededRandom(Date.now());
   obstacleData = generateObstacles(rng);
   coinData = generateCoins(rng, obstacleData);
+
+  // Re-generate with a different seed if no coins were placed
+  let retries = 0;
+  while (coinData.length === 0 && retries < 5) {
+    retries++;
+    rng = seededRandom(Date.now() + retries);
+    obstacleData = generateObstacles(rng);
+    coinData = generateCoins(rng, obstacleData);
+  }
 
   obstacleMeshes = obstacleData.map((o) => {
     const mesh = new THREE.Mesh(obstGeo, obstMat);

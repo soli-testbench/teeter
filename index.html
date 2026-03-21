@@ -293,7 +293,21 @@
     </div>
   </div>
   <div id="slowdown-indicator">SLOWED</div>
-  <div id="version-info">v1.0.0 · Last updated: 2026-03-20</div>
+  <div id="version-info" data-updated="2026-03-20T12:00:00Z">v1.0.0</div>
+  <script>
+    (function() {
+      var el = document.getElementById('version-info');
+      var iso = el.getAttribute('data-updated');
+      var date = new Date(iso);
+      if (!isNaN(date.getTime())) {
+        var formatted = date.toLocaleString(undefined, {
+          year: 'numeric', month: 'short', day: 'numeric',
+          hour: '2-digit', minute: '2-digit'
+        });
+        el.textContent = el.textContent + ' \u00B7 ' + formatted;
+      }
+    })();
+  </script>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>
