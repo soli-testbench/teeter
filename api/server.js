@@ -51,17 +51,18 @@ const MAX_SCORE_VALUE = 999999;
 //   - Route browser submissions through a backend proxy that authenticates
 //     users and injects the key into forwarded requests.
 //   - For server-to-server integrations, pass the key directly in X-API-Key.
-// Default auth mode (Docker image ships with ALLOW_ANONYMOUS_SCORES=true):
-//   Browser clients submit scores directly. Challenge tokens, rate limiting,
-//   and per-IP cooldown provide sufficient abuse resistance for a casual game
-//   leaderboard. No API key or proxy required.
+// Default auth mode (Docker image ships with ALLOW_ANONYMOUS_SCORES=false):
+//   SCORE_API_KEY is required. To enable anonymous browser submissions for
+//   casual game deployments, set ALLOW_ANONYMOUS_SCORES=true explicitly.
+//   When anonymous mode is enabled, challenge tokens, rate limiting, and
+//   per-IP cooldown provide abuse resistance. No API key or proxy required.
 //
 // ALLOW_ANONYMOUS_SCORES (env var): Enables anonymous score submissions in
-// production without SCORE_API_KEY. The Docker image defaults to "true"
-// because the browser game client cannot hold API keys, and the defense-in-
-// depth layers (challenge tokens, rate limiting, cooldown, CORS denial)
-// provide sufficient protection for a casual game leaderboard.
-// Set to "false" when using SCORE_API_KEY for server-to-server auth.
+// production without SCORE_API_KEY. The Docker image defaults to "false"
+// (secure-by-default). Set to "true" explicitly for casual game deployments
+// where the browser client cannot hold API keys — the defense-in-depth
+// layers (challenge tokens, rate limiting, cooldown, CORS denial) provide
+// abuse resistance appropriate for a casual game leaderboard.
 //
 // --- Operational monitoring thresholds ---
 // Monitor these indicators to detect abuse or misconfiguration:

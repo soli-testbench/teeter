@@ -16,7 +16,7 @@ if [ "$NODE_ENV" = "production" ] && [ -z "$SCORE_API_KEY" ] && [ "$ALLOW_ANONYM
 fi
 
 if [ "$NODE_ENV" = "production" ] && [ -z "$SCORE_API_KEY" ] && [ "$ALLOW_ANONYMOUS_SCORES" = "true" ]; then
-  echo "WARNING: NODE_ENV=production with ALLOW_ANONYMOUS_SCORES=true." >&2
+  echo "WARNING: NODE_ENV=production with ALLOW_ANONYMOUS_SCORES=true (explicit opt-in)." >&2
   echo "Score submissions will be accepted without API-key authentication." >&2
 fi
 
