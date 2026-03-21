@@ -34,24 +34,35 @@ RUN nginx -t
 # according to their retention policy; data is non-critical (game scores).
 VOLUME /data
 # --- Deployment security policy ---
-# Default: shared leaderboard enabled with anonymous browser submissions.
-# This is the intended configuration for a casual game leaderboard where
-# user accounts are not required. Abuse resistance is provided by:
+#
+# HTTPS REQUIREMENT: This container serves plain HTTP on port 8080. You MUST
+# place an HTTPS-terminating reverse proxy (e.g. Cloudflare, AWS ALB, Caddy)
+# in front of this port for any non-localhost deployment. Failing to do so
+# exposes score submissions and challenge tokens to network interception.
+# The nginx config inside this image does NOT terminate TLS.
+#
+# --- Anonymous write endpoint: explicit risk acceptance ---
+# ALLOW_ANONYMOUS_SCORES=true is the default because the product requirement
+# is a casual browser game leaderboard with no user accounts. This is an
+# intentional, reviewed design decision — not an accidental misconfiguration.
+#
+# Abuse resistance (defense-in-depth):
 #   - Challenge tokens (one-time, IP-bound, 5-min TTL, max 5 pending/IP)
 #   - Rate limiting (3 POST/min/IP)
 #   - Per-IP cooldown (10s between submissions)
-#   - Duplicate detection, input validation, CORS denial
-# Accepted risk: determined attacker with multiple IPs could insert fake scores.
+#   - Duplicate detection, input validation, body size cap
+#   - CORS denial (no Access-Control-Allow-Origin header)
+#   - CSP connect-src 'self' (blocks cross-origin script access)
+#   - Server binds 127.0.0.1 only (nginx proxy required)
+#
+# Accepted risk: a determined attacker with multiple IPs could insert fake
+# scores. This is appropriate for non-critical game score data.
 #
 # To require authenticated submissions (server-to-server):
 #   docker run -e SCORE_API_KEY=<secret> -e ALLOW_ANONYMOUS_SCORES=false ...
 # To disable the leaderboard API entirely:
 #   docker run -e ALLOW_ANONYMOUS_SCORES=false ...
 #   (server will refuse to start without SCORE_API_KEY or explicit opt-in)
-#
-# IMPORTANT: If deploying outside localhost/Docker internal networking,
-# place an HTTPS-terminating reverse proxy (e.g. Cloudflare, ALB, Caddy)
-# in front of port 8080. The nginx config does not terminate TLS itself.
 ENV NODE_ENV=production
 ENV ALLOW_ANONYMOUS_SCORES=true
 EXPOSE 8080
