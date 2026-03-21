@@ -3,17 +3,26 @@ mkdir -p /data
 chown appuser:appuser /data
 chmod 700 /data
 
-MAX_RETRIES=5
-RETRY_WINDOW=60
+# --- Crash-budget policy (configurable via environment) ---
+# The API process is restarted up to MAX_RETRIES times within a sliding
+# RETRY_WINDOW (seconds). If the budget is exhausted the API stays down,
+# nginx continues serving the static frontend, and the game falls back to
+# localStorage for leaderboard data. A sentinel file is written so
+# external health-checks / orchestrators can detect the state and
+# restart the container if desired.
+#
+# Override defaults by setting these env vars in your Dockerfile or
+# docker-compose.yml:
+#   API_MAX_RETRIES  – max crash restarts within the window (default 5)
+#   API_RETRY_WINDOW – window length in seconds (default 60)
+MAX_RETRIES="${API_MAX_RETRIES:-5}"
+RETRY_WINDOW="${API_RETRY_WINDOW:-60}"
 CRASH_SENTINEL="/tmp/api_crash_exhausted"
 
 # Remove stale sentinel from previous runs
 rm -f "$CRASH_SENTINEL"
 
 # Start Node API in the background with bounded restarts.
-# Gives up after MAX_RETRIES failures within RETRY_WINDOW seconds to
-# avoid masking persistent crash conditions.  The API is non-critical —
-# the frontend continues serving with localStorage fallback.
 (
   failures=0
   window_start=$(date +%s)
