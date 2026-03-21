@@ -613,6 +613,34 @@ async function run() {
     }
   });
 
+  // --- Crash recovery: scores persist across server restarts ---
+  await test('Scores survive server crash and restart (simulated recovery)', async () => {
+    // Write a known score to disk
+    const knownScores = [{ name: 'Persist', score: 999 }];
+    fs.writeFileSync(path.join(tmpDir, 'scores.json'), JSON.stringify(knownScores), 'utf8');
+
+    // Kill the running server (simulates a crash)
+    serverProcess.kill('SIGKILL');
+    await new Promise((r) => serverProcess.on('exit', r));
+
+    // Restart the server (simulates start.sh restart loop)
+    serverProcess = spawn(process.execPath, [patchedPath], { stdio: 'pipe' });
+    serverProcess.stderr.on('data', () => {});
+    serverProcess.stdout.on('data', () => {});
+    await waitForServer();
+
+    // Verify scores survived the crash
+    const res = await request('GET');
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.body.length >= 1, 'Expected at least one score after restart');
+    assert.strictEqual(res.body[0].name, 'Persist');
+    assert.strictEqual(res.body[0].score, 999);
+
+    // Verify new submissions work after restart
+    const post = await request('POST', { name: 'AfterCrash', score: 500 });
+    assert.strictEqual(post.status, 201, 'Expected 201 for POST after crash recovery');
+  });
+
   // Print results
   console.log(`\n${passed + failed} tests, ${passed} passed, ${failed} failed`);
 
