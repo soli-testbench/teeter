@@ -171,18 +171,16 @@ async function run() {
     assert.strictEqual(res.body[0].score, 100);
   });
 
-  await test('POST with empty name defaults to Anonymous', async () => {
+  await test('POST with empty name returns 400', async () => {
     const res = await request('POST', { name: '  ', score: 50 });
-    assert.strictEqual(res.status, 201);
-    const entry = res.body.find((e) => e.score === 50);
-    assert.strictEqual(entry.name, 'Anonymous');
+    assert.strictEqual(res.status, 400);
+    assert.ok(res.body.error.includes('empty'));
   });
 
-  await test('POST truncates long names to 15 characters', async () => {
+  await test('POST with name exceeding max length returns 400', async () => {
     const res = await request('POST', { name: 'A'.repeat(30), score: 75 });
-    assert.strictEqual(res.status, 201);
-    const entry = res.body.find((e) => e.score === 75);
-    assert.strictEqual(entry.name.length, 15);
+    assert.strictEqual(res.status, 400);
+    assert.ok(res.body.error.includes('at most'));
   });
 
   await test('Scores are sorted descending', async () => {

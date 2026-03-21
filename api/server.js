@@ -91,7 +91,9 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.method === 'POST') {
-    const clientIp = req.socket.remoteAddress || 'unknown';
+    // Trust X-Real-IP set by our nginx reverse proxy to avoid
+    // rate-limiting all clients as a single shared proxy address
+    const clientIp = req.headers['x-real-ip'] || req.socket.remoteAddress || 'unknown';
     if (isRateLimited(clientIp)) {
       sendError(res, 429, 'Too many requests. Try again later.');
       return;
@@ -122,17 +124,19 @@ const server = http.createServer((req, res) => {
         return;
       }
 
-      // Validate name
+      // Validate name — reject empty/whitespace-only names
       if (typeof data.name !== 'string') {
         sendError(res, 400, 'Name must be a string');
         return;
       }
-      let name = data.name.trim();
+      const name = data.name.trim();
       if (!name) {
-        name = 'Anonymous';
+        sendError(res, 400, 'Name must not be empty');
+        return;
       }
       if (name.length > MAX_NAME_LENGTH) {
-        name = name.slice(0, MAX_NAME_LENGTH);
+        sendError(res, 400, 'Name must be at most ' + MAX_NAME_LENGTH + ' characters');
+        return;
       }
 
       // Validate score
