@@ -257,6 +257,7 @@ const server = http.createServer((req, res) => {
     const clientIp = (isLoopback && req.headers['x-real-ip']) ? req.headers['x-real-ip'] : peerIp || 'unknown';
     const token = issueChallenge(clientIp);
     if (!token) {
+      console.error(`MONITOR: 429 challenge-farming ip=${clientIp}`);
       sendError(res, 429, 'Too many pending challenges');
       return;
     }
@@ -284,12 +285,14 @@ const server = http.createServer((req, res) => {
     const isLoopback = peerIp === '127.0.0.1' || peerIp === '::1' || peerIp === '::ffff:127.0.0.1';
     const clientIp = (isLoopback && req.headers['x-real-ip']) ? req.headers['x-real-ip'] : peerIp || 'unknown';
     if (isRateLimited(clientIp)) {
+      console.error(`MONITOR: 429 rate-limited ip=${clientIp}`);
       sendError(res, 429, 'Too many requests. Try again later.');
       return;
     }
 
     // Enforce API key when configured (defense-in-depth against anonymous abuse)
     if (SCORE_API_KEY && req.headers['x-api-key'] !== SCORE_API_KEY) {
+      console.error(`MONITOR: 401 invalid-api-key ip=${clientIp}`);
       sendError(res, 401, 'Invalid or missing API key');
       return;
     }
@@ -297,6 +300,7 @@ const server = http.createServer((req, res) => {
     // Validate challenge token (required for write integrity)
     const challengeToken = req.headers['x-challenge-token'] || '';
     if (!challengeToken || !consumeChallenge(challengeToken, clientIp)) {
+      console.error(`MONITOR: 403 invalid-challenge ip=${clientIp}`);
       sendError(res, 403, 'Missing or invalid challenge token. GET /api/challenge first.');
       return;
     }
@@ -304,6 +308,7 @@ const server = http.createServer((req, res) => {
     // Cooldown: reject if this IP submitted a score too recently
     const lastSubmit = lastSubmitMap.get(clientIp);
     if (lastSubmit && (Date.now() - lastSubmit) < SCORE_COOLDOWN_MS) {
+      console.error(`MONITOR: 429 cooldown ip=${clientIp}`);
       sendError(res, 429, 'Please wait before submitting another score.');
       return;
     }
@@ -319,6 +324,7 @@ const server = http.createServer((req, res) => {
         // Send 413 exactly once and consume remaining data to avoid connection reset.
         // resume() drains any buffered chunks so the client sees a clean HTTP response
         // instead of a TCP RST.
+        console.error(`MONITOR: 413 payload-too-large ip=${clientIp}`);
         sendError(res, 413, 'Payload too large');
         req.resume();
       }
