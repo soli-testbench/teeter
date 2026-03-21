@@ -361,20 +361,6 @@ function gameLoop(timestamp) {
       slowdownIndicator.classList.remove('visible');
     }
 
-    // Handle track completion — regenerate level with fresh coins
-    if (result.trackCompleted) {
-      regenerateLevel();
-      const config = getTrackConfig();
-      config.obstacles = getObstacles();
-      config.coins = getCoins();
-      config.turtle = getTurtle();
-      initPhysics(config);
-      resetBallRotation();
-      slowdownIndicator.classList.remove('visible');
-      updateBallPosition(0, config.trackHeight / 2 + config.ballRadius, config.ballStartZ);
-      updateCamera(config.ballStartZ);
-    }
-
     // Handle finish line crossing
     if (result.finished && state === 'playing') {
       enterFinished();

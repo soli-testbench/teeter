@@ -91,11 +91,6 @@ function getLateral(t) {
   return lateral;
 }
 
-function generateCoins(rng, obstacles) {
-  const coins = [];
-  const halfTrack = TRACK_WIDTH / 2;
-  const halfLength = TRACK_LENGTH / 2;
-
 function getTrackUp(t) {
   const tangent = curve.getTangentAt(t);
   const lateral = getLateral(t);
@@ -142,39 +137,6 @@ function buildTrackMesh() {
       indices.push(base + 1, base + 3, base + 2);
     }
   }
-
-  // Coins after the last obstacle
-  if (obstacles.length > 0) {
-    const lastZ = obstacles[obstacles.length - 1].z + 1;
-    const gap = halfLength - lastZ;
-    if (gap >= 3) {
-      const count = 2;
-      const step = gap / (count + 1);
-      for (let j = 1; j <= count; j++) {
-        const cz = lastZ + step * j;
-        const cx = (rng() * 2 - 1) * (halfTrack - 0.5);
-        coins.push({ x: cx, z: cz });
-      }
-    }
-  }
-
-  // Guarantee at least one coin on the track
-  if (coins.length === 0) {
-    const safeStart = SAFE_ZONE_Z + 1;
-    const safeEnd = halfLength - 2;
-    const range = safeEnd - safeStart;
-    const count = Math.max(3, Math.floor(range / 5));
-    const step = range / (count + 1);
-    for (let j = 1; j <= count; j++) {
-      const cz = safeStart + step * j;
-      const cx = (rng() * 2 - 1) * (halfTrack - 0.5);
-      coins.push({ x: cx, z: cz });
-    }
-  }
-
-  return coins;
-}
-
 
   // Also build underside for thickness
   const topVertCount = (NUM_TRACK_SAMPLES + 1) * 2;
@@ -599,11 +561,8 @@ function generateLevel() {
     return mesh;
   });
 
-  const rawCoins = generateCoins(rng, rawObstacles);
-  coinData = rawCoins;
-
   const coinY = 0.35; // Height above track surface
-  coinMeshes = rawCoins.map((c) => {
+  coinMeshes = coinData.map((c) => {
     const worldPos = curveLocalToWorld(c.t, c.d, coinY);
     const mesh = new THREE.Mesh(coinGeo, coinMat);
     mesh.position.copy(worldPos);
@@ -613,7 +572,7 @@ function generateLevel() {
   });
 
   // Turtle powerup
-  turtleData = generateTurtle(rng, rawObstacles);
+  turtleData = generateTurtle(rng, obstacleData);
   if (turtleData) {
     turtleMesh = createTurtleMesh();
     const turtleWorldPos = curveLocalToWorld(turtleData.t, turtleData.d, 0.35);
