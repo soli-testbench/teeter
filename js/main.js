@@ -9,7 +9,6 @@ import {
   getObstacles,
   getCoins,
   hideCoin,
-  showAllCoins,
   updateCoinRotation,
   regenerateLevel,
   getTurtle,
