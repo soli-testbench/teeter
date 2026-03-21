@@ -13,6 +13,9 @@ const MAX_SCORE_VALUE = 999999;
 // Rate limiting: max POST requests per IP within a sliding window.
 // 5 POSTs/min/IP is sufficient for a game leaderboard (one score per
 // completed game) and limits abuse surface.
+// Note: in-memory state resets on server restart. This is acceptable because
+// the bounded restart loop in start.sh (max 5 restarts/60s) limits how
+// often the counter resets, and the threat model is casual abuse, not DDoS.
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
 const RATE_LIMIT_MAX_POSTS = 5;
 const rateLimitMap = new Map();

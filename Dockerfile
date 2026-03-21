@@ -1,8 +1,12 @@
 FROM nginx:1.27-alpine3.21
-# Install Node.js LTS from Alpine 3.21 packages.
-# Pinned to 22.x minor version for reproducible builds.
+# Install Node.js LTS from Alpine 3.21 official packages.
+# Pinned to 22.x minor series via apk constraint. Alpine apk packages are
+# signed by the distro maintainers; provenance is verified by apk's built-in
+# signature checking against /etc/apk/keys. No npm/npx or third-party
+# package managers are used — only Node.js stdlib modules.
 RUN apk add --no-cache 'nodejs~=22' \
- && node --version
+ && node --version \
+ && echo "Node.js $(node -e "process.stdout.write(process.version)") installed from Alpine repos"
 RUN rm -rf /usr/share/nginx/html/*
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY index.html /usr/share/nginx/html/
@@ -11,6 +15,8 @@ COPY api/server.js /app/api/server.js
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 RUN nginx -t
+# Persistent storage for scores.json. Operators should back up this volume
+# according to their retention policy; data is non-critical (game scores).
 VOLUME /data
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
