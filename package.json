@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "name": "ball-game",
+  "description": "Browser ball game with shared leaderboard API",
+  "scripts": {
+    "test": "node api/server.test.js"
+  },
+  "dependencies": {}
+}
