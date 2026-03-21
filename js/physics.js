@@ -156,11 +156,11 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     }
   }
 
-  // Finish line detection
-  let finished = false;
+  // Track end — wrap back to start if ball reaches the end
+  let wrapped = false;
   if (ball.t >= 1.0) {
-    finished = true;
-    ball.t = 1.0;
+    ball.t = ball.t - 1.0;
+    wrapped = true;
   }
 
   // Convert curve-local to world position
@@ -180,8 +180,8 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     d: ball.d,
     falling: ball.falling,
     needsReset: false,
-    finished,
     obstacleHit,
+    wrapped,
     coinsCollected: newlyCollected,
     turtleCollected: turtleJustCollected,
     slowdownActive,
@@ -208,8 +208,8 @@ function updateFalling(dt) {
     d: ball.d,
     falling: true,
     needsReset,
-    finished: false,
     obstacleHit: false,
+    wrapped: false,
     coinsCollected: [],
     turtleCollected: false,
     slowdownActive,
@@ -221,10 +221,18 @@ function getFallbackResult() {
     x: 0, y: 0, z: 0,
     vx: 0, vz: 0,
     t: 0, d: 0,
-    falling: false, needsReset: false, finished: false,
-    obstacleHit: false, coinsCollected: [], turtleCollected: false,
+    falling: false, needsReset: false,
+    obstacleHit: false, wrapped: false, coinsCollected: [], turtleCollected: false,
     slowdownActive: false,
   };
+}
+
+export function refreshLevel(config) {
+  obstacles = config.obstacles || [];
+  coins = config.coins || [];
+  coinsCollected = new Array(coins.length).fill(false);
+  turtle = config.turtle || null;
+  turtleCollected = false;
 }
 
 export function getBallState() {
