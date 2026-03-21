@@ -115,7 +115,13 @@ async function addScoreAsync(name, value) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, score: value }),
     });
-    if (!res.ok) throw new Error('API error ' + res.status);
+    if (!res.ok) {
+      // Server explicitly rejected the submission (4xx/5xx) — do not fall back
+      // to local storage, as that would weaken server-enforced integrity
+      // (e.g. rate limiting, auth, duplicate detection).
+      console.warn('Score submission rejected by server:', res.status);
+      return cachedScores.length ? cachedScores : loadLocalScores();
+    }
     const scores = await res.json();
     if (Array.isArray(scores)) {
       cachedScores = scores;
@@ -123,7 +129,7 @@ async function addScoreAsync(name, value) {
       return scores;
     }
   } catch {
-    // API unavailable — fall back to localStorage
+    // Network/timeout error — API unreachable, fall back to localStorage
   }
   const scores = loadLocalScores();
   scores.push({ name, score: value });
