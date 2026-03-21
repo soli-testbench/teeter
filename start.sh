@@ -3,6 +3,17 @@ mkdir -p /data
 chown appuser:appuser /data
 chmod 700 /data
 
+# --- Deployment validation ---
+# Enforce SCORE_API_KEY when NODE_ENV=production. This is a belt-and-suspenders
+# check — the Node.js server also refuses to start without it, but failing
+# here provides a clearer error before any process is spawned.
+if [ "$NODE_ENV" = "production" ] && [ -z "$SCORE_API_KEY" ]; then
+  echo "FATAL: NODE_ENV=production but SCORE_API_KEY is not set." >&2
+  echo "Production deployments MUST set SCORE_API_KEY to prevent anonymous score submissions." >&2
+  echo "Set SCORE_API_KEY via 'docker run -e' or compose env." >&2
+  exit 1
+fi
+
 # --- Process model: nginx + supervised Node.js API ---
 # This container runs two processes:
 #   1. nginx (PID 1's child) — serves static files and proxies /api/* to the

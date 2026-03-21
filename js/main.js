@@ -93,7 +93,13 @@ async function fetchWithTimeout(url, options = {}) {
 async function loadScoresAsync() {
   try {
     const res = await fetchWithTimeout('/api/scores');
-    if (!res.ok) throw new Error('API error ' + res.status);
+    if (!res.ok) {
+      // Server explicitly returned an error — do not fall back to localStorage
+      // since the server is reachable but rejecting requests (e.g. auth failure).
+      // Return cached scores if available, otherwise empty.
+      console.warn('Scores API returned', res.status);
+      return cachedScores.length ? cachedScores : [];
+    }
     const scores = await res.json();
     if (Array.isArray(scores)) {
       cachedScores = scores;
@@ -101,7 +107,7 @@ async function loadScoresAsync() {
       return scores;
     }
   } catch {
-    // API unavailable — fall back to localStorage
+    // Network/timeout error — API unreachable, fall back to localStorage
   }
   const local = loadLocalScores();
   cachedScores = local;
@@ -109,12 +115,16 @@ async function loadScoresAsync() {
 }
 
 async function addScoreAsync(name, value) {
+  let serverReachable = false;
   try {
     // Obtain a one-time challenge token before submitting (write integrity)
     const challengeRes = await fetchWithTimeout('/api/challenge');
+    serverReachable = true;
     if (!challengeRes.ok) {
-      console.warn('Failed to obtain challenge token:', challengeRes.status);
-      return cachedScores.length ? cachedScores : loadLocalScores();
+      // Server explicitly rejected the challenge request (e.g. 429 rate limit).
+      // Do NOT fall back to localStorage — honour server-side controls.
+      console.warn('Challenge rejected by server:', challengeRes.status);
+      return cachedScores.length ? cachedScores : [];
     }
     const { token } = await challengeRes.json();
 
@@ -131,7 +141,7 @@ async function addScoreAsync(name, value) {
       // to local storage, as that would weaken server-enforced integrity
       // (e.g. rate limiting, auth, duplicate detection).
       console.warn('Score submission rejected by server:', res.status);
-      return cachedScores.length ? cachedScores : loadLocalScores();
+      return cachedScores.length ? cachedScores : [];
     }
     const scores = await res.json();
     if (Array.isArray(scores)) {
@@ -140,7 +150,13 @@ async function addScoreAsync(name, value) {
       return scores;
     }
   } catch {
-    // Network/timeout error — API unreachable, fall back to localStorage
+    // Network/timeout error — API unreachable
+    if (serverReachable) {
+      // Server was reachable but the POST failed unexpectedly (e.g. JSON parse
+      // error on response). Treat as server-side issue, don't bypass to local.
+      return cachedScores.length ? cachedScores : [];
+    }
+    // Server genuinely unreachable — fall back to localStorage
   }
   const scores = loadLocalScores();
   scores.push({ name, score: value });

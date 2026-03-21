@@ -701,6 +701,85 @@ async function run() {
     assert.strictEqual(res.body.status, 'ok');
   });
 
+  // --- Challenge rejection integrity tests ---
+  // Verify that when the challenge endpoint returns non-OK (e.g. 429),
+  // no score is written to the datastore — prevents integrity regressions
+  // where the client might bypass server controls on challenge rejection.
+  await test('Score is not persisted when challenge endpoint rejects (429)', async () => {
+    const intPort = PORT + 6;
+    const intDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-int-'));
+    // Low challenge limit to trigger 429 quickly
+    const intPatched = serverSrc
+      .replace(/const PORT = \d+;/, `const PORT = ${intPort};`)
+      .replace(/const DATA_DIR = '[^']+';/, `const DATA_DIR = '${intDir.replace(/\\/g, '/')}';`)
+      .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;')
+      .replace(/const SCORE_COOLDOWN_MS = [\d* ]+;/, 'const SCORE_COOLDOWN_MS = 0;')
+      .replace(/const MAX_CHALLENGES_PER_IP = \d+;/, 'const MAX_CHALLENGES_PER_IP = 1;');
+    const intPath = path.join(intDir, 'server.int.js');
+    fs.writeFileSync(intPath, intPatched);
+    const intProc = spawn(process.execPath, [intPath], { stdio: 'pipe' });
+    intProc.stderr.on('data', () => {});
+    intProc.stdout.on('data', () => {});
+
+    await waitForPort(intPort);
+
+    // Record initial scores
+    const before = await new Promise((resolve, reject) => {
+      const req = http.request({ hostname: '127.0.0.1', port: intPort, path: '/api/scores', method: 'GET' }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => resolve(JSON.parse(chunks)));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+
+    // Request one challenge (uses the only slot)
+    await getChallenge(intPort);
+
+    // Second challenge request should get 429
+    const challengeRes = await new Promise((resolve, reject) => {
+      const req = http.request({ hostname: '127.0.0.1', port: intPort, path: '/api/challenge', method: 'GET' }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => resolve({ status: r.statusCode }));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    assert.strictEqual(challengeRes.status, 429, 'Expected 429 on exhausted challenge slots');
+
+    // Verify scores unchanged — no score should have been added
+    const after = await new Promise((resolve, reject) => {
+      const req = http.request({ hostname: '127.0.0.1', port: intPort, path: '/api/scores', method: 'GET' }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => resolve(JSON.parse(chunks)));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    assert.deepStrictEqual(after, before, 'Scores should not change when challenge is rejected');
+
+    intProc.kill('SIGTERM');
+    try { fs.rmSync(intDir, { recursive: true }); } catch {}
+  });
+
+  await test('POST with server-rejected challenge does not modify scores', async () => {
+    // Use main server — POST without a valid challenge token should return 403
+    // and should NOT modify the score file
+    fs.writeFileSync(path.join(tmpDir, 'scores.json'), JSON.stringify([{ name: 'Existing', score: 100 }]), 'utf8');
+
+    const res = await requestNoChallenge('POST', { name: 'Rejected', score: 999 }, { 'X-Challenge-Token': 'fake-token' });
+    assert.strictEqual(res.status, 403, 'Expected 403 for invalid challenge token');
+
+    // Verify scores unchanged
+    const scores = await request('GET');
+    assert.strictEqual(scores.body.length, 1, 'Score count should not change');
+    assert.strictEqual(scores.body[0].name, 'Existing', 'Original score should remain');
+    assert.strictEqual(scores.body[0].score, 100, 'Original score value should remain');
+  });
+
   // Print results
   console.log(`\n${passed + failed} tests, ${passed} passed, ${failed} failed`);
 
