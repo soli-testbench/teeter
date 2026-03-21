@@ -10,9 +10,11 @@ const MAX_BODY = 1024;
 const MAX_NAME_LENGTH = 15;
 const MAX_SCORE_VALUE = 999999;
 
-// Rate limiting: max POST requests per IP within a sliding window
+// Rate limiting: max POST requests per IP within a sliding window.
+// 5 POSTs/min/IP is sufficient for a game leaderboard (one score per
+// completed game) and limits abuse surface.
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-const RATE_LIMIT_MAX_POSTS = 10; // 10 POSTs per minute per IP
+const RATE_LIMIT_MAX_POSTS = 5;
 const rateLimitMap = new Map();
 
 function isRateLimited(ip) {
