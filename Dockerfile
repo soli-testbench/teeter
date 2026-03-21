@@ -49,10 +49,12 @@ ENV ALLOW_ANONYMOUS_SCORES=false
 EXPOSE 8080
 # --- Deployment auth paths ---
 #
-# Default (no env overrides): the API server requires SCORE_API_KEY.
-#   If SCORE_API_KEY is not set and ALLOW_ANONYMOUS_SCORES is not "true",
-#   the API server will refuse to start (nginx still serves the static game
-#   with localStorage-only leaderboard).
+# Default (no env overrides): the leaderboard API is DISABLED.
+#   start.sh detects the missing auth config and skips API startup entirely
+#   (no crash-loop). nginx serves the static game with localStorage-only
+#   leaderboard. The health check reports unhealthy (crash sentinel present)
+#   so orchestrators can detect the degraded state. To enable the shared
+#   leaderboard, set SCORE_API_KEY or ALLOW_ANONYMOUS_SCORES=true.
 #
 # Anonymous browser mode (casual game deployment):
 #   docker run -e ALLOW_ANONYMOUS_SCORES=true -v scores:/data -p 8080:8080 ball-game

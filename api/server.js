@@ -105,9 +105,12 @@ if (NODE_ENV === 'production' && !SCORE_API_KEY && !ALLOW_ANONYMOUS_SCORES) {
 
 if (NODE_ENV === 'production' && !SCORE_API_KEY && ALLOW_ANONYMOUS_SCORES) {
   console.warn(
-    'WARNING: NODE_ENV=production with ALLOW_ANONYMOUS_SCORES=true. ' +
-    'Score submissions will be accepted without API-key authentication. ' +
-    'Challenge tokens, rate limiting, and cooldown provide baseline abuse resistance.'
+    'WARNING: NODE_ENV=production with ALLOW_ANONYMOUS_SCORES=true (explicit opt-in). ' +
+    'Score submissions accepted without API-key authentication. ' +
+    'Abuse resistance: challenge tokens (one-time, IP-bound, 5-min TTL), ' +
+    'rate limiting (3/min/IP), cooldown (10s/IP), duplicate detection. ' +
+    'Accepted risk: determined attacker with multiple IPs could insert fake scores. ' +
+    'For stronger guarantees, set SCORE_API_KEY and use a backend proxy.'
   );
 }
 

@@ -853,6 +853,43 @@ async function run() {
     try { fs.rmSync(defDir, { recursive: true }); } catch {}
   });
 
+  // --- Default Docker container startup path ---
+  // Simulates the exact Docker default: NODE_ENV=production, ALLOW_ANONYMOUS_SCORES=false,
+  // no SCORE_API_KEY. Verifies the API exits cleanly with an actionable error message
+  // so operators know the leaderboard is disabled and how to enable it.
+  await test('Default Docker path: exits with actionable error when no auth configured', async () => {
+    const dockerPort = PORT + 8;
+    const dockerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-docker-default-'));
+    const dockerPatched = serverSrc
+      .replace(/const PORT = \d+;/, `const PORT = ${dockerPort};`)
+      .replace(/const DATA_DIR = '[^']+';/, `const DATA_DIR = '${dockerDir.replace(/\\/g, '/')}';`);
+    const dockerPath = path.join(dockerDir, 'server.docker-default.js');
+    fs.writeFileSync(dockerPath, dockerPatched);
+
+    const dockerEnv = { ...process.env };
+    delete dockerEnv.SCORE_API_KEY;
+    dockerEnv.NODE_ENV = 'production';
+    dockerEnv.ALLOW_ANONYMOUS_SCORES = 'false';
+    const dockerProc = spawn(process.execPath, [dockerPath], {
+      stdio: 'pipe',
+      env: dockerEnv,
+    });
+
+    let stderrOutput = '';
+    dockerProc.stderr.on('data', (d) => { stderrOutput += d.toString(); });
+    dockerProc.stdout.on('data', () => {});
+
+    const exitCode = await new Promise((resolve) => {
+      dockerProc.on('exit', (code) => resolve(code));
+    });
+    assert.strictEqual(exitCode, 1, 'Expected exit code 1 for default Docker config');
+    assert.ok(stderrOutput.includes('FATAL'), 'Expected FATAL error in stderr');
+    assert.ok(stderrOutput.includes('SCORE_API_KEY'), 'Error should mention SCORE_API_KEY');
+    assert.ok(stderrOutput.includes('ALLOW_ANONYMOUS_SCORES'), 'Error should mention ALLOW_ANONYMOUS_SCORES as alternative');
+
+    try { fs.rmSync(dockerDir, { recursive: true }); } catch {}
+  });
+
   await test('POST with server-rejected challenge does not modify scores', async () => {
     // Use main server — POST without a valid challenge token should return 403
     // and should NOT modify the score file

@@ -8,11 +8,19 @@ chmod 700 /data
 # its own startup check (process.exit(1)), so we only warn here to allow nginx
 # to still serve the static game even if the API cannot start. The API supervisor
 # loop below will log the server's FATAL error and retry per the crash-budget policy.
+SKIP_API=false
 if [ "$NODE_ENV" = "production" ] && [ -z "$SCORE_API_KEY" ] && [ "$ALLOW_ANONYMOUS_SCORES" != "true" ]; then
-  echo "WARNING: NODE_ENV=production but SCORE_API_KEY is not set." >&2
-  echo "The API server will refuse to start. Set SCORE_API_KEY via 'docker run -e'" >&2
-  echo "or compose env, or opt in to anonymous submissions with ALLOW_ANONYMOUS_SCORES=true." >&2
-  echo "nginx will continue serving the static game with localStorage-only leaderboard." >&2
+  echo "======================================================================" >&2
+  echo "NOTICE: Global leaderboard API is DISABLED (secure-by-default)." >&2
+  echo "" >&2
+  echo "NODE_ENV=production requires one of:" >&2
+  echo "  1. SCORE_API_KEY=<secret>               (server-to-server auth)" >&2
+  echo "  2. ALLOW_ANONYMOUS_SCORES=true           (browser-based game)" >&2
+  echo "" >&2
+  echo "The static game will be served by nginx with localStorage-only scores." >&2
+  echo "To enable the shared leaderboard, restart with one of the above options." >&2
+  echo "======================================================================" >&2
+  SKIP_API=true
 fi
 
 if [ "$NODE_ENV" = "production" ] && [ -z "$SCORE_API_KEY" ] && [ "$ALLOW_ANONYMOUS_SCORES" = "true" ]; then
@@ -65,43 +73,50 @@ CRASH_SENTINEL="/tmp/api_crash_exhausted"
 rm -f "$CRASH_SENTINEL"
 
 # Start Node API in the background with bounded restarts and auto-recovery.
-(
-  failures=0
-  window_start=$(date +%s)
+# When SKIP_API=true (production with no auth configured), skip the API entirely
+# to avoid a pointless crash-loop. The health check will reflect API-down state.
+if [ "$SKIP_API" = "true" ]; then
+  echo "INFO: Skipping API startup (no auth configured). Writing crash sentinel." >&2
+  echo "API_DISABLED=true reason=no_auth_configured" > "$CRASH_SENTINEL"
+else
+  (
+    failures=0
+    window_start=$(date +%s)
 
-  while true; do
-    echo "INFO: Starting Node API..." >&2
-    su -s /bin/sh appuser -c 'node /app/api/server.js'
-    exit_code=$?
-    now=$(date +%s)
-    elapsed=$((now - window_start))
+    while true; do
+      echo "INFO: Starting Node API..." >&2
+      su -s /bin/sh appuser -c 'node /app/api/server.js'
+      exit_code=$?
+      now=$(date +%s)
+      elapsed=$((now - window_start))
 
-    if [ "$elapsed" -ge "$RETRY_WINDOW" ]; then
-      # Reset failure counter after the window elapses
-      failures=0
-      window_start=$now
-    fi
+      if [ "$elapsed" -ge "$RETRY_WINDOW" ]; then
+        # Reset failure counter after the window elapses
+        failures=0
+        window_start=$now
+      fi
 
-    failures=$((failures + 1))
-    echo "WARN: Node API exited with status $exit_code (failure $failures/$MAX_RETRIES in ${elapsed}s window)." >&2
+      failures=$((failures + 1))
+      echo "WARN: Node API exited with status $exit_code (failure $failures/$MAX_RETRIES in ${elapsed}s window)." >&2
 
-    if [ "$failures" -ge "$MAX_RETRIES" ]; then
-      echo "ERROR: Node API crashed $MAX_RETRIES times within ${RETRY_WINDOW}s." >&2
-      echo "INFO: Writing crash sentinel and entering ${RECOVERY_PAUSE}s recovery cooldown..." >&2
-      echo "API_CRASHED=$(date -Iseconds) failures=$MAX_RETRIES window=${RETRY_WINDOW}s exit_code=$exit_code" > "$CRASH_SENTINEL"
+      if [ "$failures" -ge "$MAX_RETRIES" ]; then
+        echo "ERROR: Node API crashed $MAX_RETRIES times within ${RETRY_WINDOW}s." >&2
+        echo "INFO: Writing crash sentinel and entering ${RECOVERY_PAUSE}s recovery cooldown..." >&2
+        echo "API_CRASHED=$(date -Iseconds) failures=$MAX_RETRIES window=${RETRY_WINDOW}s exit_code=$exit_code" > "$CRASH_SENTINEL"
 
-      # Supervised recovery: wait, then reset budget and retry
-      sleep "$RECOVERY_PAUSE"
-      echo "INFO: Recovery cooldown elapsed. Resetting crash budget and restarting API..." >&2
-      rm -f "$CRASH_SENTINEL"
-      failures=0
-      window_start=$(date +%s)
-      continue
-    fi
+        # Supervised recovery: wait, then reset budget and retry
+        sleep "$RECOVERY_PAUSE"
+        echo "INFO: Recovery cooldown elapsed. Resetting crash budget and restarting API..." >&2
+        rm -f "$CRASH_SENTINEL"
+        failures=0
+        window_start=$(date +%s)
+        continue
+      fi
 
-    sleep 2
-  done
-) &
+      sleep 2
+    done
+  ) &
+fi
 
 # Run nginx in the foreground as PID 1's child.
 nginx -g 'daemon off;'
