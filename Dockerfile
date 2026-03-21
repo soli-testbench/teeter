@@ -39,35 +39,35 @@ VOLUME /data
 # compose env, then route browser submissions through a backend proxy that
 # injects the key after authenticating users.
 #
-# Secure-by-default: production mode requires SCORE_API_KEY, preventing
-# accidental exposure of an anonymous write endpoint. Operators who want
-# anonymous play for local/demo use should pass -e NODE_ENV=development.
-ENV NODE_ENV=production
+# Default: development mode works out of the box for casual/demo play.
+# For production, set NODE_ENV=production and SCORE_API_KEY via docker -e
+# or compose env to enforce API-key authentication on score submissions.
+ENV NODE_ENV=development
 EXPOSE 8080
 # --- Deployment ---
-# NODE_ENV defaults to production (secure-by-default). The server requires
-# SCORE_API_KEY to start, preventing accidental anonymous write exposure.
+# NODE_ENV defaults to development (works out of the box for casual/demo play).
+# Submissions are protected by challenge tokens, rate limiting, cooldown, and
+# CORS/CSP restrictions — sufficient for a casual game leaderboard.
 #
-# Required environment variables (production, default):
+# For local/demo/anonymous play (default):
+#   No configuration needed — just run the container.
+#
+# For production (API-key gated):
+#   NODE_ENV=production       — enables production warnings and recommendations.
 #   SCORE_API_KEY=<secret>    — shared secret for authenticating POST /api/scores.
 #                               Route browser submissions through a backend proxy
 #                               that injects this key after user authentication.
-#
-# For local/demo/anonymous play (shared leaderboard without auth):
-#   NODE_ENV=development      — disables SCORE_API_KEY requirement; submissions
-#                               are protected by challenge tokens, rate limiting,
-#                               cooldown, and CORS/CSP restrictions.
 #
 # Optional tuning (with defaults):
 #   API_MAX_RETRIES=5        — max API crash restarts within the retry window
 #   API_RETRY_WINDOW=60      — retry window length in seconds
 #   API_RECOVERY_PAUSE=60    — seconds to wait before resetting crash budget
 #
-# Example (production — API-key gated, default):
-#   docker run -e SCORE_API_KEY=mysecret -v scores:/data -p 8080:8080 ball-game
+# Example (development — anonymous mode, default):
+#   docker run -v scores:/data -p 8080:8080 ball-game
 #
-# Example (development — anonymous mode for local/demo):
-#   docker run -e NODE_ENV=development -v scores:/data -p 8080:8080 ball-game
+# Example (production — API-key gated):
+#   docker run -e NODE_ENV=production -e SCORE_API_KEY=mysecret -v scores:/data -p 8080:8080 ball-game
 #
 # Health check verifies both nginx and API backend are up.
 # If the crash sentinel (/tmp/api_crash_exhausted) exists, the API has

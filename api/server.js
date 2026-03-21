@@ -80,16 +80,17 @@ const MAX_SCORE_VALUE = 999999;
 const SCORE_API_KEY = process.env.SCORE_API_KEY || '';
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// Production guardrail: require SCORE_API_KEY in production to prevent
-// misconfigured deployments from exposing an anonymous write endpoint.
+// Production advisory: warn if SCORE_API_KEY is not set in production.
+// The server still starts — challenge tokens, rate limiting, and cooldown
+// provide baseline abuse resistance. But API-key gating is recommended
+// for production deployments exposed to the public internet.
 if (NODE_ENV === 'production' && !SCORE_API_KEY) {
-  console.error(
-    'FATAL: NODE_ENV=production but SCORE_API_KEY is not set. ' +
-    'Production deployments MUST set SCORE_API_KEY to prevent anonymous score submissions. ' +
-    'Set SCORE_API_KEY via environment variable (docker -e or compose env). ' +
-    'For local/demo use, set NODE_ENV=development or leave it unset.'
+  console.warn(
+    'WARNING: NODE_ENV=production but SCORE_API_KEY is not set. ' +
+    'Score submissions will be accepted without API-key authentication. ' +
+    'Challenge tokens, rate limiting, and cooldown still provide abuse resistance. ' +
+    'For stronger protection, set SCORE_API_KEY via environment variable.'
   );
-  process.exit(1);
 }
 
 if (SCORE_API_KEY) {

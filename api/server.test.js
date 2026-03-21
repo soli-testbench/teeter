@@ -485,7 +485,7 @@ async function run() {
   });
 
   // --- Production mode guardrails ---
-  await test('Server refuses to start in production without SCORE_API_KEY', async () => {
+  await test('Server starts in production without SCORE_API_KEY but warns', async () => {
     const prodPort = PORT + 3;
     const prodDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-prod-'));
     const prodPatched = serverSrc
@@ -508,13 +508,15 @@ async function run() {
     prodProc.stderr.on('data', (d) => { stderrOutput += d.toString(); });
     prodProc.stdout.on('data', () => {});
 
-    // Server should exit with non-zero code
-    const exitCode = await new Promise((resolve) => {
-      prodProc.on('exit', (code) => resolve(code));
-    });
+    // Server should start despite missing SCORE_API_KEY (warns instead of crashing)
+    await waitForPort(prodPort);
+    assert.ok(stderrOutput.includes('SCORE_API_KEY'), 'Expected warning message mentioning SCORE_API_KEY');
 
-    assert.notStrictEqual(exitCode, 0, 'Expected non-zero exit code in production without SCORE_API_KEY');
-    assert.ok(stderrOutput.includes('SCORE_API_KEY'), 'Expected error message mentioning SCORE_API_KEY');
+    // Verify it accepts anonymous submissions (no API key required)
+    const postRes = await postWithChallenge(prodPort, { name: 'ProdAnon', score: 77 });
+    assert.strictEqual(postRes.status, 201, 'Expected 201 for anonymous POST in production without SCORE_API_KEY');
+
+    prodProc.kill('SIGTERM');
     try { fs.rmSync(prodDir, { recursive: true }); } catch {}
   });
 
