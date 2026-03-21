@@ -4,7 +4,9 @@ FROM nginx:1.27-alpine3.21
 # the nodejs package (check: apk update && apk info -v nodejs).
 # If the pinned version is unavailable, remove the =version suffix to unblock
 # builds, then re-pin once the new version is confirmed.
-RUN apk add --no-cache 'nodejs=22.15.1-r0'
+RUN apk add --no-cache 'nodejs=22.15.1-r0' \
+ && node --version | grep -q '^v22\.' \
+ || (echo "ERROR: unexpected Node.js major version" && exit 1)
 RUN rm -rf /usr/share/nginx/html/*
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY index.html /usr/share/nginx/html/

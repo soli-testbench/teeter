@@ -3,6 +3,8 @@ mkdir -p /data
 
 # Start Node API with exponential backoff on repeated crashes.
 # Resets the failure counter after 60 s of healthy uptime.
+# If the API exceeds the crash threshold, the entire container exits
+# so the orchestrator (Docker restart policy / Kubernetes) can handle recovery.
 (
   MAX_FAILURES=5
   failures=0
@@ -20,11 +22,13 @@ mkdir -p /data
     fi
 
     if [ "$failures" -ge "$MAX_FAILURES" ]; then
-      echo "CRITICAL: Node API crashed $MAX_FAILURES times in rapid succession (last exit=$exit_code); giving up." >&2
-      # Write a marker file so the healthcheck (or an external monitor) can
-      # detect that the API is permanently down, not just temporarily restarting.
+      echo "CRITICAL: Node API crashed $MAX_FAILURES times in rapid succession (last exit=$exit_code); terminating container." >&2
       echo "crashed at $(date -Iseconds) after $MAX_FAILURES consecutive rapid failures (last exit=$exit_code)" > /data/api-crash.log
-      break
+      # Kill nginx to stop the container — avoids a degraded state where
+      # frontend is up but API is permanently down. The orchestrator
+      # (Docker restart policy / Kubernetes) will handle recovery.
+      nginx -s quit 2>/dev/null || kill "$(cat /var/run/nginx.pid 2>/dev/null)" 2>/dev/null
+      exit 1
     fi
 
     delay=$(( 2 ** failures ))
@@ -33,4 +37,7 @@ mkdir -p /data
   done
 ) &
 
+# Run nginx in the foreground as PID 1's child.
+# If nginx exits (naturally or killed by the API crash handler above),
+# the container stops and the orchestrator can restart it.
 nginx -g 'daemon off;'
