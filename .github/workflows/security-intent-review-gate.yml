@@ -22,28 +22,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ─────────────────────────────────────────────────────────────────────
-  # Job 1: pre-checks
-  # Owns: input validation, checkout, CI wait, mergeability, review range
-  # ─────────────────────────────────────────────────────────────────────
-  pre-checks:
+  security-intent-review:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    outputs:
-      passed: ${{ steps.result.outputs.passed }}
-      pr_number: ${{ steps.checkout_review.outputs.pr_number }}
-      head_sha: ${{ steps.checkout_review.outputs.head_sha }}
-      base_sha: ${{ steps.refs.outputs.base_sha }}
-      changed_count: ${{ steps.refs.outputs.changed_count }}
-      review_branch: ${{ steps.checkout_review.outputs.review_branch }}
-      fork_owner: ${{ steps.checkout_review.outputs.fork_owner }}
-      fork_repo: ${{ steps.checkout_review.outputs.fork_repo }}
+    timeout-minutes: 45
     env:
       BASE_BRANCH: main
       REVIEW_BRANCH: ${{ inputs.branch }}
       TASK_ID: ${{ inputs.task_id }}
       SECURITY_INTENT_REVIEW_BASE_URL: ${{ vars.SECURITY_INTENT_REVIEW_BASE_URL }}
       SECURITY_INTENT_REVIEW_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
+      SECURITY_REVIEW_FAIL_ON: needs_review
     steps:
       - name: Validate dispatch inputs
         shell: bash
@@ -106,9 +94,6 @@ jobs:
           PR_NUM=$(echo "$PR_JSON" | jq -r '.number')
 
           echo "pr_number=${PR_NUM}" >> "$GITHUB_OUTPUT"
-          echo "fork_owner=${OWNER}" >> "$GITHUB_OUTPUT"
-          echo "fork_repo=${REPO}" >> "$GITHUB_OUTPUT"
-          echo "review_branch=${BRANCH}" >> "$GITHUB_OUTPUT"
           echo "Found PR #${PR_NUM}, branch ${BRANCH} in ${OWNER}/${REPO}"
           git remote add fork "https://github.com/${OWNER}/${REPO}.git" 2>/dev/null || true
           git fetch --no-tags fork "refs/heads/${BRANCH}"
@@ -136,7 +121,6 @@ jobs:
           allowed-conclusions: success
 
       - name: Report CI failure
-        id: ci_failure
         if: ${{ always() && steps.wait_ci.outcome == 'failure' }}
         shell: bash
         env:
@@ -147,15 +131,12 @@ jobs:
           set -euo pipefail
           mkdir -p .contextgen/security_review
 
-          # Fetch CI failure logs. For fork PRs, --commit won't match (GitHub uses the
-          # merge commit SHA, not the PR head SHA), so we search by headSha in the JSON
-          # output instead. We also avoid hardcoding the workflow filename.
+          # Fetch CI failure logs (try run logs first, fall back to check output)
           CI_LOGS="CI build failed (no details available)"
           if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
-            RUN_ID=$(gh run list --repo "${{ github.repository }}" \
-              --json databaseId,conclusion,headSha \
-              --jq "[.[] | select(.headSha == \"${HEAD_SHA}\" and .conclusion == \"failure\")][0].databaseId" \
-              2>/dev/null || true)
+            RUN_ID=$(gh run list --repo "${{ github.repository }}" --commit "$HEAD_SHA" \
+              --workflow ci.yml --json databaseId,conclusion \
+              --jq '[.[] | select(.conclusion == "failure")][0].databaseId' 2>/dev/null || true)
             if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
               CI_LOGS=$(gh run view "$RUN_ID" --repo "${{ github.repository }}" --log-failed 2>/dev/null | tail -100 || echo "$CI_LOGS")
             fi
@@ -183,68 +164,10 @@ jobs:
               ]
             }' > .contextgen/security_review/security_review.json
           echo "::error::CI build failed — skipping security review"
-
-      - name: Upload CI failure result
-        if: ${{ always() && steps.ci_failure.outcome == 'success' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: review-result
-          path: .contextgen/security_review/security_review.json
-
-      - name: Check PR mergeability
-        id: check_mergeable
-        if: ${{ !cancelled() && steps.wait_ci.outcome == 'success' }}
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ steps.checkout_review.outputs.pr_number }}
-        run: |
-          set -euo pipefail
-          if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
-            echo "mergeable=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          MERGEABLE="UNKNOWN"
-          for i in 1 2 3 4 5; do
-            MERGEABLE=$(gh pr view "$PR_NUMBER" --json mergeable --jq '.mergeable' 2>/dev/null || echo "UNKNOWN")
-            if [ "$MERGEABLE" != "UNKNOWN" ]; then break; fi
-            sleep 5
-          done
-          echo "PR #${PR_NUMBER} mergeable: ${MERGEABLE}"
-          if [ "$MERGEABLE" = "CONFLICTING" ]; then
-            echo "mergeable=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "mergeable=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Report merge conflict
-        id: merge_conflict
-        if: ${{ !cancelled() && steps.check_mergeable.outputs.mergeable == 'false' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .contextgen/security_review
-          jq -n \
-            --arg task_id "$TASK_ID" \
-            --arg branch "$REVIEW_BRANCH" \
-            --arg base_branch "$BASE_BRANCH" \
-            '{
-              task_id: $task_id, branch: $branch, base_branch: $base_branch,
-              base_sha: "", head_sha: "",
-              final_decision: "merge_conflict", average_approval_score: 0,
-              recommended_actions: ["MERGE_CONFLICT: The target branch has changed since this PR was created. Rebase onto the latest upstream default branch, resolve conflicts, and resubmit."]
-            }' > .contextgen/security_review/security_review.json
-
-      - name: Upload merge conflict result
-        if: ${{ always() && steps.merge_conflict.outcome == 'success' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: review-result
-          path: .contextgen/security_review/security_review.json
+          exit 1
 
       - name: Resolve review range
         id: refs
-        if: ${{ !cancelled() && steps.wait_ci.outcome == 'success' && steps.check_mergeable.outputs.mergeable != 'false' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -257,59 +180,6 @@ jobs:
           echo "base_sha=${BASE_SHA}" >> "$GITHUB_OUTPUT"
           echo "head_sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
           echo "changed_count=${CHANGED_COUNT}" >> "$GITHUB_OUTPUT"
-
-      - name: Set result
-        id: result
-        if: always()
-        shell: bash
-        run: |
-          if [ "${{ steps.wait_ci.outcome }}" = "success" ] && [ "${{ steps.check_mergeable.outputs.mergeable }}" != "false" ]; then
-            echo "passed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "passed=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  # ─────────────────────────────────────────────────────────────────────
-  # Job 2: security-review
-  # Runs the actual heuristic + Claude + Codex review pipeline
-  # Only runs when pre-checks passed
-  # ─────────────────────────────────────────────────────────────────────
-  security-review:
-    needs: pre-checks
-    if: needs.pre-checks.outputs.passed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      BASE_BRANCH: main
-      REVIEW_BRANCH: ${{ needs.pre-checks.outputs.review_branch || inputs.branch }}
-      TASK_ID: ${{ inputs.task_id }}
-      SECURITY_INTENT_REVIEW_BASE_URL: ${{ vars.SECURITY_INTENT_REVIEW_BASE_URL }}
-      SECURITY_INTENT_REVIEW_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
-      SECURITY_REVIEW_FAIL_ON: needs_review
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-          clean: true
-
-      - name: Checkout review branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          FORK_OWNER="${{ needs.pre-checks.outputs.fork_owner }}"
-          FORK_REPO="${{ needs.pre-checks.outputs.fork_repo }}"
-          BRANCH="${{ needs.pre-checks.outputs.review_branch }}"
-          git remote add fork "https://github.com/${FORK_OWNER}/${FORK_REPO}.git" 2>/dev/null || true
-          git fetch --no-tags fork "refs/heads/${BRANCH}"
-          git checkout -B "$BRANCH" FETCH_HEAD
-
-      - name: Fetch base branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch --no-tags origin "refs/heads/${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}"
 
       - name: Preflight task context fetch
         shell: bash
@@ -347,8 +217,8 @@ jobs:
           set -euo pipefail
           mkdir -p .contextgen/security_review
 
-          BASE_SHA="${{ needs.pre-checks.outputs.base_sha }}"
-          HEAD_SHA="${{ needs.pre-checks.outputs.head_sha }}"
+          BASE_SHA="${{ steps.refs.outputs.base_sha }}"
+          HEAD_SHA="${{ steps.refs.outputs.head_sha }}"
 
           DIFF_FILE="$(mktemp)"
           git diff --no-color -U0 "$BASE_SHA" "$HEAD_SHA" > "$DIFF_FILE" 2>/dev/null || true
@@ -393,7 +263,7 @@ jobs:
                 *) echo 0 ;;
               esac
             )" \
-            --argjson changed_count "${{ needs.pre-checks.outputs.changed_count }}" \
+            --argjson changed_count "${{ steps.refs.outputs.changed_count }}" \
             '{decision: $decision, reason: $reason, signals: $signals, approval_score: $approval_score, changed_files_count: $changed_count}' \
             > .contextgen/security_review/heuristic_results.json
 
@@ -552,11 +422,11 @@ jobs:
             - A preflight copy is available at .contextgen/security_review/task_context.txt if you need to confirm what the workflow received.
 
             STEP 3 - Understand the branch changes:
-            - Run: git diff --name-status ${{ needs.pre-checks.outputs.base_sha }} ${{ needs.pre-checks.outputs.head_sha }}
-            - Run: git diff ${{ needs.pre-checks.outputs.base_sha }} ${{ needs.pre-checks.outputs.head_sha }}
+            - Run: git diff --name-status ${{ steps.refs.outputs.base_sha }} ${{ steps.refs.outputs.head_sha }}
+            - Run: git diff ${{ steps.refs.outputs.base_sha }} ${{ steps.refs.outputs.head_sha }}
             - Use Read to view the COMPLETE content of every changed file - do not skip or truncate
             - Use Grep to search for suspicious patterns across the codebase if needed
-            - If the diff is large, also run: git log --oneline ${{ needs.pre-checks.outputs.base_sha }}..${{ needs.pre-checks.outputs.head_sha }}
+            - If the diff is large, also run: git log --oneline ${{ steps.refs.outputs.base_sha }}..${{ steps.refs.outputs.head_sha }}
             - After reading the diff, inspect the project-specific sensitive surfaces you identified in STEP 1, even if some of those files are unchanged.
             - Prioritize surfaces that could hide scope creep or harm if altered indirectly by the changed code.
 
@@ -734,8 +604,8 @@ jobs:
             - A preflight copy is available at .contextgen/security_review/task_context.txt if you need to confirm what the workflow received.
 
             STEP 3 - Examine the branch changes in full:
-            - Run: git diff --name-status ${{ needs.pre-checks.outputs.base_sha }} ${{ needs.pre-checks.outputs.head_sha }}
-            - Run: git diff ${{ needs.pre-checks.outputs.base_sha }} ${{ needs.pre-checks.outputs.head_sha }}
+            - Run: git diff --name-status ${{ steps.refs.outputs.base_sha }} ${{ steps.refs.outputs.head_sha }}
+            - Run: git diff ${{ steps.refs.outputs.base_sha }} ${{ steps.refs.outputs.head_sha }}
             - For EVERY changed file, read the COMPLETE file content with: cat <filepath>
               Do NOT use head or tail - you must see the full file to detect hidden payloads.
             - CRITICAL: For each changed file, trace files that interact with it:
@@ -744,7 +614,7 @@ jobs:
                 may look safe in isolation but become dangerous when you see how callers consume it
             - Also inspect configuration files (package.json, CI workflows, Dockerfiles, etc.)
               that could be affected by the changes, even if they were not directly modified
-            - If the diff is large, also run: git log --oneline ${{ needs.pre-checks.outputs.base_sha }}..${{ needs.pre-checks.outputs.head_sha }}
+            - If the diff is large, also run: git log --oneline ${{ steps.refs.outputs.base_sha }}..${{ steps.refs.outputs.head_sha }}
             - Inspect the project-specific sensitive surfaces you identified in STEP 1, even if some of those files are unchanged.
             - Prioritize surfaces that could hide scope creep or harm if altered indirectly by the changed code.
 
@@ -832,8 +702,8 @@ jobs:
         if: always()
         shell: bash
         env:
-          BASE_SHA: ${{ needs.pre-checks.outputs.base_sha }}
-          HEAD_SHA: ${{ needs.pre-checks.outputs.head_sha }}
+          BASE_SHA: ${{ steps.refs.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.refs.outputs.head_sha }}
         run: |
           set -euo pipefail
           OUT_DIR=".contextgen/security_review"
@@ -895,41 +765,13 @@ jobs:
             echo "- Base branch: \`${BASE_BRANCH}\`"
             echo "- Final decision: \`${FINAL_DECISION}\`"
             echo "- Average approval score: \`${AVERAGE_APPROVAL_SCORE}\`"
-            echo "- Changed files: \`${{ needs.pre-checks.outputs.changed_count }}\`"
+            echo "- Changed files: \`${{ steps.refs.outputs.changed_count }}\`"
             echo
             echo "### Heuristic summary"
             cat "${OUT_DIR}/heuristic_summary.txt"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload review result
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: review-result
-          path: .contextgen/security_review/security_review.json
-
-  # ─────────────────────────────────────────────────────────────────────
-  # Job 3: report
-  # Always runs. Downloads the artifact and posts results.
-  # ─────────────────────────────────────────────────────────────────────
-  report:
-    needs: [pre-checks, security-review]
-    if: always()
-    runs-on: ubuntu-latest
-    env:
-      REVIEW_BRANCH: ${{ needs.pre-checks.outputs.review_branch || inputs.branch }}
-      TASK_ID: ${{ inputs.task_id }}
-      BASE_BRANCH: main
-      SECURITY_INTENT_REVIEW_BASE_URL: ${{ vars.SECURITY_INTENT_REVIEW_BASE_URL }}
-      SECURITY_INTENT_REVIEW_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
-    steps:
-      - name: Download review result
-        uses: actions/download-artifact@v4
-        with:
-          name: review-result
-          path: .contextgen/security_review
-
-      - name: Log review result
+      - name: Log combined review result
         if: always()
         shell: bash
         run: |
@@ -952,7 +794,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_API_URL: ${{ github.api_url }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ needs.pre-checks.outputs.pr_number }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
           OUT_DIR=".contextgen/security_review"
@@ -963,91 +805,79 @@ jobs:
             exit 0
           fi
 
-          if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
-            echo "::notice::No PR number available. Skipping PR comment."
+          HEAD_QUERY="$(jq -nr --arg head "${GITHUB_REPOSITORY_OWNER}:${REVIEW_BRANCH}" '$head|@uri')"
+          PRS_JSON="$(
+            curl \
+              --fail \
+              --silent \
+              --show-error \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/pulls?state=open&head=${HEAD_QUERY}&per_page=1"
+          )"
+
+          PR_NUMBER="$(printf '%s' "$PRS_JSON" | jq -r '.[0].number // empty')"
+          if [ -z "$PR_NUMBER" ]; then
+            echo "::notice::No open PR found for branch ${REVIEW_BRANCH}. Skipping PR comment."
             exit 0
           fi
 
           FINAL_DECISION="$(jq -r '.final_decision // "block"' "$REPORT_PATH")"
           AVERAGE_APPROVAL_SCORE="$(jq -r '.average_approval_score // "0"' "$REPORT_PATH")"
-
-          # Detect whether this is a full review result (has heuristic/claude/codex)
-          # or a pre-check failure result (minimal JSON with just decision + actions)
-          HAS_FULL_REVIEW="$(jq -e '.heuristic and .claude and .codex' "$REPORT_PATH" >/dev/null 2>&1&& echo "true" || echo "false")"
+          HEURISTIC_APPROVAL_SCORE="$(jq -r '.heuristic.approval_score // "0"' "$REPORT_PATH")"
+          CLAUDE_APPROVAL_SCORE="$(jq -r '.claude.approval_score // "0"' "$REPORT_PATH")"
+          CODEX_APPROVAL_SCORE="$(jq -r '.codex.approval_score // "0"' "$REPORT_PATH")"
+          HEURISTIC_DECISION="$(jq -r '.heuristic.decision // "unknown"' "$REPORT_PATH")"
+          HEURISTIC_REASON="$(jq -r '.heuristic.reason // "unknown"' "$REPORT_PATH")"
+          HEURISTIC_SIGNALS="$(jq -r '.heuristic.signals // empty' "$REPORT_PATH")"
+          CLAUDE_SUMMARY="$(jq -r '.claude.summary // "No Claude summary."' "$REPORT_PATH")"
+          CODEX_SUMMARY="$(jq -r '.codex.summary // "No Codex summary."' "$REPORT_PATH")"
 
           COMMENT_PATH="${OUT_DIR}/pr_comment.md"
-
-          if [ "$HAS_FULL_REVIEW" = "true" ]; then
-            # Full review result — render complete breakdown
-            HEURISTIC_APPROVAL_SCORE="$(jq -r '.heuristic.approval_score // "0"' "$REPORT_PATH")"
-            CLAUDE_APPROVAL_SCORE="$(jq -r '.claude.approval_score // "0"' "$REPORT_PATH")"
-            CODEX_APPROVAL_SCORE="$(jq -r '.codex.approval_score // "0"' "$REPORT_PATH")"
-            HEURISTIC_DECISION="$(jq -r '.heuristic.decision // "unknown"' "$REPORT_PATH")"
-            HEURISTIC_REASON="$(jq -r '.heuristic.reason // "unknown"' "$REPORT_PATH")"
-            HEURISTIC_SIGNALS="$(jq -r '.heuristic.signals // empty' "$REPORT_PATH")"
-            CLAUDE_SUMMARY="$(jq -r '.claude.summary // "No Claude summary."' "$REPORT_PATH")"
-            CODEX_SUMMARY="$(jq -r '.codex.summary // "No Codex summary."' "$REPORT_PATH")"
-
-            {
-              echo "## Security Intent Review"
-              echo
-              echo "- Final decision: \`${FINAL_DECISION}\`"
-              echo "- Average approval score: \`${AVERAGE_APPROVAL_SCORE}\`"
-              echo "- Task ID: \`${TASK_ID}\`"
-              echo "- Base branch: \`${BASE_BRANCH}\`"
-              echo "- Reviewed branch: \`${REVIEW_BRANCH}\`"
-              echo
-              echo "### Heuristic"
-              echo "- Approval score: \`${HEURISTIC_APPROVAL_SCORE}\`"
-              echo "- Decision: \`${HEURISTIC_DECISION}\`"
-              echo "- Reason: \`${HEURISTIC_REASON}\`"
-              if [ -n "$HEURISTIC_SIGNALS" ]; then
-                echo "- Signals: \`${HEURISTIC_SIGNALS}\`"
-              fi
-              echo
-              echo "### Claude"
-              echo "- Approval score: \`${CLAUDE_APPROVAL_SCORE}\`"
-              printf '%s\n' "$CLAUDE_SUMMARY"
-              echo
-              echo "### Codex"
-              echo "- Approval score: \`${CODEX_APPROVAL_SCORE}\`"
-              printf '%s\n' "$CODEX_SUMMARY"
-              if jq -e '.recommended_actions // [] | length > 0' "$REPORT_PATH" >/dev/null; then
-                echo
-                echo "### Recommended actions"
-                jq -r '.recommended_actions[] | "- " + .' "$REPORT_PATH"
-              fi
-            } > "$COMMENT_PATH"
-
-            if jq -e '[.claude.findings // [], .codex.findings // []] | add | length > 0' "$REPORT_PATH" >/dev/null; then
-              {
-                echo
-                echo "### Findings"
-                jq -r '
-                  [(.claude.findings // []), (.codex.findings // [])]
-                  | add
-                  | unique_by((.id // "") + "|" + (.file // "") + "|" + (.rationale // ""))
-                  | .[:8]
-                  | .[]
-                  | "- [" + (.severity // "unknown") + "] `" + (.file // "(unknown)") + "`: " + (.rationale // .evidence // "No rationale provided")
-                ' "$REPORT_PATH"
-              } >> "$COMMENT_PATH"
+          {
+            echo "## Security Intent Review"
+            echo
+            echo "- Final decision: \`${FINAL_DECISION}\`"
+            echo "- Average approval score: \`${AVERAGE_APPROVAL_SCORE}\`"
+            echo "- Task ID: \`${TASK_ID}\`"
+            echo "- Base branch: \`${BASE_BRANCH}\`"
+            echo "- Reviewed branch: \`${REVIEW_BRANCH}\`"
+            echo
+            echo "### Heuristic"
+            echo "- Approval score: \`${HEURISTIC_APPROVAL_SCORE}\`"
+            echo "- Decision: \`${HEURISTIC_DECISION}\`"
+            echo "- Reason: \`${HEURISTIC_REASON}\`"
+            if [ -n "$HEURISTIC_SIGNALS" ]; then
+              echo "- Signals: \`${HEURISTIC_SIGNALS}\`"
             fi
-          else
-            # Pre-check failure result (CI failure or merge conflict) — render minimal comment
+            echo
+            echo "### Claude"
+            echo "- Approval score: \`${CLAUDE_APPROVAL_SCORE}\`"
+            printf '%s\n' "$CLAUDE_SUMMARY"
+            echo
+            echo "### Codex"
+            echo "- Approval score: \`${CODEX_APPROVAL_SCORE}\`"
+            printf '%s\n' "$CODEX_SUMMARY"
+            if jq -e '.recommended_actions // [] | length > 0' "$REPORT_PATH" >/dev/null; then
+              echo
+              echo "### Recommended actions"
+              jq -r '.recommended_actions[] | "- " + .' "$REPORT_PATH"
+            fi
+          } > "$COMMENT_PATH"
+
+          if jq -e '[.claude.findings // [], .codex.findings // []] | add | length > 0' "$REPORT_PATH" >/dev/null; then
             {
-              echo "## Security Intent Review"
               echo
-              echo "- Final decision: \`${FINAL_DECISION}\`"
-              echo "- Task ID: \`${TASK_ID}\`"
-              echo "- Base branch: \`${BASE_BRANCH}\`"
-              echo "- Reviewed branch: \`${REVIEW_BRANCH}\`"
-              echo
-              if jq -e '.recommended_actions // [] | length > 0' "$REPORT_PATH" >/dev/null; then
-                echo "### Issues"
-                jq -r '.recommended_actions[] | "- " + .' "$REPORT_PATH"
-              fi
-            } > "$COMMENT_PATH"
+              echo "### Findings"
+              jq -r '
+                [(.claude.findings // []), (.codex.findings // [])]
+                | add
+                | unique_by((.id // "") + "|" + (.file // "") + "|" + (.rationale // ""))
+                | .[:8]
+                | .[]
+                | "- [" + (.severity // "unknown") + "] `" + (.file // "(unknown)") + "`: " + (.rationale // .evidence // "No rationale provided")
+              ' "$REPORT_PATH"
+            } >> "$COMMENT_PATH"
           fi
 
           jq -n --rawfile body "$COMMENT_PATH" '{body: $body}' > "${OUT_DIR}/pr_comment_payload.json"

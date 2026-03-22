@@ -4,10 +4,13 @@ const RESPONSE_RATE = 6.0;
 const FORWARD_SPEED = 2.0;
 const PITCH_SENSITIVITY = 3.0;
 const MAX_SPEED = 6.0;
-const MAX_DT = 1 / 30; // Cap delta time to prevent physics explosions
-const COIN_COLLECT_RADIUS = 0.8;
-const TURTLE_COLLECT_RADIUS = 0.8;
+const MAX_DT = 1 / 30;
+const COIN_COLLECT_RADIUS = 0.6; // In lateral-distance space
+const COIN_COLLECT_T_RADIUS = 0.005; // In t-space
+const TURTLE_COLLECT_RADIUS = 0.6;
+const TURTLE_COLLECT_T_RADIUS = 0.005;
 const SLOWDOWN_DURATION = 4;
+const OBSTACLE_COLLISION_T_RADIUS = 0.004;
 
 let ball = {};
 let trackConfig = {};
@@ -33,14 +36,25 @@ export function initPhysics(config) {
 
 export function resetBall() {
   ball = {
-    x: 0,
-    y: trackConfig.trackHeight / 2 + trackConfig.ballRadius,
-    z: trackConfig.ballStartZ,
-    vx: 0,
-    vy: 0,
-    vz: FORWARD_SPEED,
+    t: 0, // Position along curve (0-1)
+    d: 0, // Lateral offset from centerline
+    speed: FORWARD_SPEED, // Forward speed in world units/sec
+    lateralSpeed: 0, // Lateral speed
     falling: false,
+    vy: 0, // Vertical velocity when falling
+    worldX: 0,
+    worldY: 0,
+    worldZ: 0,
   };
+
+  // Compute initial world position
+  if (trackConfig.curveLocalToWorld) {
+    const pos = trackConfig.curveLocalToWorld(0, 0, trackConfig.ballRadius);
+    ball.worldX = pos.x;
+    ball.worldY = pos.y;
+    ball.worldZ = pos.z;
+  }
+
   coinsCollected = new Array(coins.length).fill(false);
   turtleCollected = false;
   slowdownActive = false;
@@ -58,6 +72,9 @@ export function updatePhysics(dt, tiltAngle, pitch) {
 }
 
 function updateOnTrack(dt, tiltAngle, pitch) {
+  const { curve, curveLength, curveLocalToWorld, trackWidth, trackHeight, ballRadius } = trackConfig;
+  if (!curve) return getFallbackResult();
+
   // Decrement slowdown timer
   if (slowdownActive) {
     slowdownTimer -= dt;
@@ -67,41 +84,45 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     }
   }
 
-  // Effective speeds (halved when slowed)
   const effectiveForward = slowdownActive ? FORWARD_SPEED / 2 : FORWARD_SPEED;
   const effectiveMax = slowdownActive ? MAX_SPEED / 2 : MAX_SPEED;
 
-  // Direct lateral velocity from head tilt with smooth interpolation
-  const targetVx = -tiltAngle * DIRECT_SENSITIVITY;
-  ball.vx += (targetVx - ball.vx) * RESPONSE_RATE * dt;
+  // Get tangent at current position for slope calculation
+  const clampedT = Math.max(0, Math.min(1, ball.t));
+  const tangent = curve.getTangentAt(clampedT);
 
-  // Forward motion modulated by pitch (forward tilt speeds up, backward slows down)
+  // Gravity slope boost — tangent.y < 0 means going downhill
+  const gravityBoost = -GRAVITY * tangent.y * 0.3;
+
+  // Forward motion: base speed + gravity + pitch modulation
   const pitchVal = pitch || 0;
-  ball.vz = Math.max(0, Math.min(effectiveMax, effectiveForward * (1 + pitchVal * PITCH_SENSITIVITY)));
+  const baseSpeed = effectiveForward * (1 + pitchVal * PITCH_SENSITIVITY);
+  ball.speed = Math.max(0.5, Math.min(effectiveMax, baseSpeed + gravityBoost));
 
-  // Update position
-  ball.x += ball.vx * dt;
-  ball.z += ball.vz * dt;
+  // Lateral movement from head tilt
+  const targetLateral = tiltAngle * DIRECT_SENSITIVITY;
+  ball.lateralSpeed += (targetLateral - ball.lateralSpeed) * RESPONSE_RATE * dt;
 
-  // Track boundaries — check if ball center has gone past track edge
-  const halfWidth = trackConfig.trackWidth / 2;
-  if (Math.abs(ball.x) > halfWidth) {
+  // Update curve-local position
+  ball.t += (ball.speed * dt) / curveLength;
+  ball.d += ball.lateralSpeed * dt;
+
+  // Edge detection — fall off if past track edge
+  const halfWidth = trackWidth / 2;
+  if (Math.abs(ball.d) > halfWidth) {
     ball.falling = true;
     ball.vy = 0;
   }
 
-  // Obstacle collision — AABB check with ball radius margin
+  // Obstacle collision in curve-local space
   let obstacleHit = false;
   if (!ball.falling) {
-    const br = trackConfig.ballRadius;
     for (let i = 0; i < obstacles.length; i++) {
       const o = obstacles[i];
-      if (
-        ball.x + br > o.x - o.halfW &&
-        ball.x - br < o.x + o.halfW &&
-        ball.z + br > o.z - o.halfD &&
-        ball.z - br < o.z + o.halfD
-      ) {
+      const tDist = Math.abs(ball.t - o.t);
+      const dDist = Math.abs(ball.d - o.d);
+
+      if (tDist < OBSTACLE_COLLISION_T_RADIUS && dDist < o.halfW + ballRadius * 0.5) {
         ball.falling = true;
         ball.vy = 0;
         obstacleHit = true;
@@ -110,26 +131,24 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     }
   }
 
-  // Coin collection — distance check in XZ plane
+  // Coin collection in curve-local space
   const newlyCollected = [];
   for (let i = 0; i < coins.length; i++) {
     if (coinsCollected[i]) continue;
-    const dx = ball.x - coins[i].x;
-    const dz = ball.z - coins[i].z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist < COIN_COLLECT_RADIUS) {
+    const tDist = Math.abs(ball.t - coins[i].t);
+    const dDist = Math.abs(ball.d - coins[i].d);
+    if (tDist < COIN_COLLECT_T_RADIUS && dDist < COIN_COLLECT_RADIUS) {
       coinsCollected[i] = true;
       newlyCollected.push(i);
     }
   }
 
-  // Turtle collection — distance check in XZ plane
+  // Turtle collection
   let turtleJustCollected = false;
   if (turtle && !turtleCollected) {
-    const dx = ball.x - turtle.x;
-    const dz = ball.z - turtle.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist < TURTLE_COLLECT_RADIUS) {
+    const tDist = Math.abs(ball.t - turtle.t);
+    const dDist = Math.abs(ball.d - turtle.d);
+    if (tDist < TURTLE_COLLECT_T_RADIUS && dDist < TURTLE_COLLECT_RADIUS) {
       turtleCollected = true;
       turtleJustCollected = true;
       slowdownActive = true;
@@ -137,53 +156,65 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     }
   }
 
-  // Track end — wrap back to start if ball reaches the end
-  let trackCompleted = false;
-  const halfLength = trackConfig.trackLength / 2;
-  if (ball.z > halfLength) {
-    ball.z = -halfLength + 1;
-    trackCompleted = true;
+  // Finish line — ball crossed the end of the track
+  let finished = false;
+  if (ball.t >= 1.0) {
+    ball.t = 1.0;
+    ball.speed = 0;
+    ball.lateralSpeed = 0;
+    finished = true;
   }
 
+  // Convert curve-local to world position
+  const safeT = Math.max(0, Math.min(0.9999, ball.t));
+  const worldPos = curveLocalToWorld(safeT, ball.d, ballRadius);
+  ball.worldX = worldPos.x;
+  ball.worldY = worldPos.y;
+  ball.worldZ = worldPos.z;
+
   return {
-    x: ball.x,
-    y: ball.y,
-    z: ball.z,
-    vx: ball.vx,
-    vz: ball.vz,
+    x: ball.worldX,
+    y: ball.worldY,
+    z: ball.worldZ,
+    vx: ball.lateralSpeed,
+    vz: ball.speed,
+    t: ball.t,
+    d: ball.d,
     falling: ball.falling,
     needsReset: false,
     obstacleHit,
+    finished,
     coinsCollected: newlyCollected,
     turtleCollected: turtleJustCollected,
     slowdownActive,
-    trackCompleted,
   };
 }
 
 function updateFalling(dt) {
   ball.vy -= GRAVITY * dt;
-  ball.y += ball.vy * dt;
+  ball.worldY += ball.vy * dt;
 
-  // Also continue lateral and forward motion slightly
-  ball.x += ball.vx * dt * 0.5;
-  ball.z += ball.vz * dt * 0.3;
+  // Continue lateral and forward drift
+  ball.worldX += ball.lateralSpeed * dt * 0.5;
+  ball.worldZ += ball.speed * dt * 0.3;
 
-  const needsReset = ball.y < -10;
+  const needsReset = ball.worldY < -10;
 
   return {
-    x: ball.x,
-    y: ball.y,
-    z: ball.z,
-    vx: ball.vx,
-    vz: ball.vz,
+    x: ball.worldX,
+    y: ball.worldY,
+    z: ball.worldZ,
+    vx: ball.lateralSpeed,
+    vz: ball.speed,
+    t: ball.t,
+    d: ball.d,
     falling: true,
     needsReset,
     obstacleHit: false,
+    finished: false,
     coinsCollected: [],
     turtleCollected: false,
     slowdownActive,
-    trackCompleted: false,
   };
 }
 
@@ -193,6 +224,17 @@ export function refreshLevel(config) {
   coinsCollected = new Array(coins.length).fill(false);
   turtle = config.turtle || null;
   turtleCollected = false;
+}
+
+function getFallbackResult() {
+  return {
+    x: 0, y: 0, z: 0,
+    vx: 0, vz: 0,
+    t: 0, d: 0,
+    falling: false, needsReset: false,
+    obstacleHit: false, finished: false, coinsCollected: [], turtleCollected: false,
+    slowdownActive: false,
+  };
 }
 
 export function getBallState() {
