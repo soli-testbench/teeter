@@ -71,8 +71,20 @@ for i in $(seq 1 $SMOKE_RETRIES); do
   sleep 1
 done
 
+# STRICT_STARTUP (default: true): when enabled, the container exits with an
+# error if the API smoke test fails, ensuring the container never appears
+# healthy while /api/scores is non-functional. Set to "false" to allow
+# nginx to start even if the API is unhealthy (graceful degradation to
+# localStorage-only mode).
+STRICT_STARTUP="${STRICT_STARTUP:-true}"
+
 if [ "$SMOKE_OK" = "false" ]; then
-  echo "WARN: Startup smoke test did not pass within ${SMOKE_RETRIES}s. API may still be starting." >&2
+  if [ "$STRICT_STARTUP" = "true" ]; then
+    echo "ERROR: Startup smoke test failed — /api/scores not healthy after ${SMOKE_RETRIES}s. Exiting (STRICT_STARTUP=true)." >&2
+    exit 1
+  else
+    echo "WARN: Startup smoke test did not pass within ${SMOKE_RETRIES}s. API may still be starting (STRICT_STARTUP=false)." >&2
+  fi
 fi
 
 # Run nginx in the foreground as PID 1's child.
