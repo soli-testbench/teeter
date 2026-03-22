@@ -32,6 +32,9 @@ RUN adduser -D -H -s /sbin/nologin appuser
 RUN nginx -t
 # Persistent storage for scores.json. Operators should back up this volume
 # according to their retention policy; data is non-critical (game scores).
+# IMPORTANT: Single-instance only. The JSON file store is not safe for
+# multi-replica deployments. Use a shared external datastore (e.g. Redis
+# or a database) if horizontal scaling is needed.
 VOLUME /data
 # --- Deployment security policy ---
 #
@@ -41,17 +44,15 @@ VOLUME /data
 # exposes score submissions and challenge tokens to network interception.
 # The nginx config inside this image does NOT terminate TLS.
 #
-# --- Default: anonymous writes enabled (shared leaderboard) ---
-# ALLOW_ANONYMOUS_SCORES defaults to true so the shared leaderboard works
-# out of the box — the primary use-case for this image (casual browser game,
-# no user accounts). Abuse resistance layers (challenge tokens, rate limiting,
-# cooldown, duplicate detection) are active when anonymous mode is enabled.
+# --- Default: anonymous writes DISABLED (secure-by-default) ---
+# ALLOW_ANONYMOUS_SCORES defaults to false. Operators must explicitly opt in
+# to anonymous submissions at deploy time.
 #
-# To require authenticated submissions (server-to-server):
+# For the shared leaderboard (casual browser game, no user accounts):
+#   docker run -e ALLOW_ANONYMOUS_SCORES=true -p 8080:8080 <image>
+#
+# For authenticated submissions (server-to-server):
 #   docker run -e SCORE_API_KEY=<secret> -p 8080:8080 <image>
-#
-# To disable anonymous writes and require an API key:
-#   docker run -e ALLOW_ANONYMOUS_SCORES=false -e SCORE_API_KEY=<secret> -p 8080:8080 <image>
 #
 # When ALLOW_ANONYMOUS_SCORES=true, abuse resistance (defense-in-depth):
 #   - Challenge tokens (one-time, IP-bound, 5-min TTL, max 5 pending/IP)
@@ -66,7 +67,7 @@ VOLUME /data
 # multiple IPs could insert fake scores. This is appropriate for non-critical
 # game score data.
 ENV NODE_ENV=production
-ENV ALLOW_ANONYMOUS_SCORES=true
+ENV ALLOW_ANONYMOUS_SCORES=false
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD test ! -f /tmp/api_crash_exhausted && wget -qO- http://127.0.0.1:8080/api/health || exit 1
