@@ -973,6 +973,68 @@ async function run() {
     try { fs.rmSync(gateDir, { recursive: true }); } catch {}
   });
 
+  // --- Docker default smoke test ---
+  // Simulates the exact Docker image defaults (NODE_ENV=production,
+  // ALLOW_ANONYMOUS_SCORES=true) to verify the shared global leaderboard
+  // works without any operator configuration. This is the end-to-end
+  // container smoke test recommended by the security review.
+  await test('Docker default: leaderboard works with production defaults (smoke test)', async () => {
+    const smokePort = PORT + 10;
+    const smokeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-smoke-'));
+    const smokePatched = serverSrc
+      .replace(/const PORT = \d+;/, `const PORT = ${smokePort};`)
+      .replace(/const DATA_DIR = '[^']+';/, `const DATA_DIR = '${smokeDir.replace(/\\/g, '/')}';`)
+      .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;')
+      .replace(/const SCORE_COOLDOWN_MS = [\d* ]+;/, 'const SCORE_COOLDOWN_MS = 0;');
+    const smokePath = path.join(smokeDir, 'server.smoke.js');
+    fs.writeFileSync(smokePath, smokePatched);
+
+    // Exact Docker image defaults: NODE_ENV=production, ALLOW_ANONYMOUS_SCORES=true, no SCORE_API_KEY
+    const smokeEnv = { ...process.env };
+    delete smokeEnv.SCORE_API_KEY;
+    smokeEnv.NODE_ENV = 'production';
+    smokeEnv.ALLOW_ANONYMOUS_SCORES = 'true';
+    const smokeProc = spawn(process.execPath, [smokePath], { stdio: 'pipe', env: smokeEnv });
+    smokeProc.stderr.on('data', () => {});
+    smokeProc.stdout.on('data', () => {});
+
+    await waitForPort(smokePort);
+
+    // Health check
+    const health = await new Promise((resolve, reject) => {
+      const req = http.request({ hostname: '127.0.0.1', port: smokePort, path: '/api/health', method: 'GET' }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => resolve({ status: r.statusCode, body: JSON.parse(chunks) }));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    assert.strictEqual(health.status, 200, 'Health should return 200');
+
+    // Submit a score (challenge → POST)
+    const submit = await postWithChallenge(smokePort, { name: 'SmokeTest', score: 500 });
+    assert.strictEqual(submit.status, 201, 'Score submission should succeed with Docker defaults');
+
+    // Verify retrieval
+    const get = await new Promise((resolve, reject) => {
+      const req = http.request({ hostname: '127.0.0.1', port: smokePort, path: '/api/scores', method: 'GET' }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => resolve({ status: r.statusCode, body: JSON.parse(chunks) }));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    assert.strictEqual(get.status, 200);
+    assert.strictEqual(get.body.length, 1);
+    assert.strictEqual(get.body[0].name, 'SmokeTest');
+    assert.strictEqual(get.body[0].score, 500);
+
+    smokeProc.kill('SIGTERM');
+    try { fs.rmSync(smokeDir, { recursive: true }); } catch {};
+  });
+
   await test('POST with server-rejected challenge does not modify scores', async () => {
     // Use main server — POST without a valid challenge token should return 403
     // and should NOT modify the score file
