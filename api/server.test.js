@@ -853,12 +853,10 @@ async function run() {
     try { fs.rmSync(defDir, { recursive: true }); } catch {}
   });
 
-  // --- Default Docker path (secure-by-default) ---
-  // Simulates: NODE_ENV=production, ALLOW_ANONYMOUS_SCORES=false, no SCORE_API_KEY.
-  // This is the Docker default. Verifies the API exits cleanly with an
-  // actionable error message directing operators to set SCORE_API_KEY or
-  // explicitly opt in to anonymous submissions.
-  await test('Default Docker config: exits with actionable error when ALLOW_ANONYMOUS_SCORES=false and no API key', async () => {
+  // --- Locked-down path: ALLOW_ANONYMOUS_SCORES=false, no SCORE_API_KEY ---
+  // Verifies the API exits cleanly with an actionable error message when
+  // operators explicitly disable anonymous scores but forget to set SCORE_API_KEY.
+  await test('ALLOW_ANONYMOUS_SCORES=false without API key: exits with actionable error', async () => {
     const dockerPort = PORT + 8;
     const dockerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-docker-default-'));
     const dockerPatched = serverSrc
@@ -891,10 +889,10 @@ async function run() {
     try { fs.rmSync(dockerDir, { recursive: true }); } catch {}
   });
 
-  // --- Release gate: explicit anonymous opt-in deployment path ---
-  // Validates that operators who explicitly set ALLOW_ANONYMOUS_SCORES=true
-  // (NODE_ENV=production, no SCORE_API_KEY) get a fully working shared
-  // leaderboard: challenge → POST → GET → verify persistence.
+  // --- Release gate: default Docker deployment path ---
+  // Validates the default Docker deployment (NODE_ENV=production,
+  // ALLOW_ANONYMOUS_SCORES=true, no SCORE_API_KEY) produces a fully working
+  // shared leaderboard: challenge → POST → GET → verify persistence.
   await test('Release gate: e2e shared leaderboard works with ALLOW_ANONYMOUS_SCORES=true', async () => {
     const gatePort = PORT + 9;
     const gateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-gate-'));

@@ -51,17 +51,18 @@ const MAX_SCORE_VALUE = 999999;
 //   - Route browser submissions through a backend proxy that authenticates
 //     users and injects the key into forwarded requests.
 //   - For server-to-server integrations, pass the key directly in X-API-Key.
-// Default auth mode (Docker image ships with ALLOW_ANONYMOUS_SCORES=false):
-//   The image is secure-by-default. The server refuses to start in production
-//   without either SCORE_API_KEY or explicit ALLOW_ANONYMOUS_SCORES=true.
-//   To enable the shared leaderboard for casual browser play:
-//     docker run -e ALLOW_ANONYMOUS_SCORES=true ...
+// Default auth mode (Docker image ships with ALLOW_ANONYMOUS_SCORES=true):
+//   The image enables the shared leaderboard by default — the primary
+//   use-case (casual browser game, no user accounts). Defense-in-depth
+//   layers (challenge tokens, rate limiting, cooldown) are active.
 //   To require API-key auth, set SCORE_API_KEY.
+//   To disable anonymous writes, set ALLOW_ANONYMOUS_SCORES=false and
+//   provide SCORE_API_KEY.
 //
-// ALLOW_ANONYMOUS_SCORES (env var): Enables anonymous score submissions in
-// production without SCORE_API_KEY. The Docker image defaults to "false"
-// (secure-by-default). Set to "true" to enable the shared leaderboard for
-// casual browser play, or set SCORE_API_KEY for authenticated mode.
+// ALLOW_ANONYMOUS_SCORES (env var): Controls anonymous score submissions in
+// production without SCORE_API_KEY. The Docker image defaults to "true"
+// so the shared leaderboard works out of the box. Set to "false" (and
+// provide SCORE_API_KEY) to require authenticated submissions.
 // When enabled, defense-in-depth layers (challenge tokens, rate limiting,
 // cooldown, CORS denial) provide abuse resistance appropriate for a casual
 // game leaderboard.
@@ -76,8 +77,8 @@ const MAX_SCORE_VALUE = 999999;
 // Use container log aggregation (stdout/stderr) for alerting. The server
 // logs rate-limit events and challenge rejections to stderr.
 //
-// --- Security acceptance: anonymous write endpoint (dev/demo only) ---
-// In development mode, POST /api/scores is intentionally anonymous to support
+// --- Security acceptance: anonymous write endpoint ---
+// POST /api/scores is intentionally anonymous by default to support
 // browser-based gameplay without user accounts. Mitigations in place:
 //   1. Challenge tokens (one-time, IP-bound, 5-min TTL, max 5 pending/IP)
 //   2. Rate limiting (3 POST/min/IP)
@@ -87,7 +88,7 @@ const MAX_SCORE_VALUE = 999999;
 //   6. CORS denial (no Access-Control-Allow-Origin header)
 //   7. CSP connect-src: 'self' (blocks cross-origin script access)
 //   8. Server binds 127.0.0.1 only (nginx proxy required)
-// In production, SCORE_API_KEY is enforced unless ALLOW_ANONYMOUS_SCORES=true.
+// In production with ALLOW_ANONYMOUS_SCORES=false, SCORE_API_KEY is required.
 const SCORE_API_KEY = process.env.SCORE_API_KEY || '';
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const ALLOW_ANONYMOUS_SCORES = process.env.ALLOW_ANONYMOUS_SCORES === 'true';
