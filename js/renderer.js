@@ -1,10 +1,15 @@
 import * as THREE from 'three';
 
+// Track dimensions
 const TRACK_WIDTH = 4.5;
 const TRACK_HEIGHT = 0.2;
-const TRACK_LENGTH = 50;
 const BALL_RADIUS = 0.3;
 const BALL_START_Z = -20;
+
+// Rolling track configuration
+const CHUNK_LENGTH = 20;
+const LOOKAHEAD_DISTANCE = 60;
+const CLEANUP_DISTANCE = 20;
 
 // Obstacle config
 const OBSTACLE_WIDTH = 1.5;
@@ -12,7 +17,7 @@ const OBSTACLE_HEIGHT = 1.0;
 const OBSTACLE_DEPTH = 0.4;
 const OBSTACLE_MIN_SPACING = 7;
 const OBSTACLE_MAX_SPACING = 9;
-const SAFE_ZONE_Z = BALL_START_Z + 5; // No obstacles/coins before Z = -15
+const SAFE_ZONE_END = BALL_START_Z + 5; // No obstacles/coins before Z = -15
 const MIN_GAP = 1.5; // Minimum passable gap beside obstacle
 
 // Coin config
@@ -20,38 +25,63 @@ const COIN_RADIUS = 0.25;
 const COIN_TUBE = 0.08;
 const COIN_Y = TRACK_HEIGHT / 2 + 0.35;
 
-let scene, camera, renderer;
-let trackMesh, ballMesh;
-let edgeLeft, edgeRight;
+// Turtle config
+const TURTLE_SPAWN_CHANCE = 0.3; // 30% chance per chunk
 
-let obstacleMeshes = [];
-let obstacleData = []; // { x, z, halfW, halfD }
-let coinMeshes = [];
-let coinData = []; // { x, z }
-let turtleMesh = null;
-let turtleData = null; // { x, z } or null
+let scene, camera, renderer, dirLight;
+let ballMesh;
+
+// Chunk management
+let chunks = new Map(); // chunkIndex -> chunk data
+let globalSeed = Date.now();
 
 // Simple seeded RNG for deterministic placement
 function seededRandom(seed) {
-  let s = seed;
+  let s = Math.abs(Math.floor(seed)) || 1;
   return function () {
     s = (s * 16807 + 0) % 2147483647;
     return (s - 1) / 2147483646;
   };
 }
 
-function generateObstacles(rng) {
+// Shared geometries and materials (reused across all chunks)
+const obstGeo = new THREE.BoxGeometry(OBSTACLE_WIDTH, OBSTACLE_HEIGHT, OBSTACLE_DEPTH);
+const obstMat = new THREE.MeshStandardMaterial({
+  color: 0x8B2222,
+  roughness: 0.5,
+  metalness: 0.2,
+});
+const coinGeo = new THREE.TorusGeometry(COIN_RADIUS, COIN_TUBE, 12, 24);
+const coinMat = new THREE.MeshStandardMaterial({
+  color: 0xFFD700,
+  metalness: 0.8,
+  roughness: 0.2,
+  emissive: 0x554400,
+  emissiveIntensity: 0.3,
+});
+const trackMat = new THREE.MeshStandardMaterial({
+  color: 0x8B7355,
+  roughness: 0.7,
+  metalness: 0.1,
+});
+const edgeMat = new THREE.MeshStandardMaterial({ color: 0x5a4a3a, roughness: 0.6 });
+const chunkTrackGeo = new THREE.BoxGeometry(TRACK_WIDTH, TRACK_HEIGHT, CHUNK_LENGTH);
+const chunkEdgeGeo = new THREE.BoxGeometry(0.06, 0.08, CHUNK_LENGTH);
+
+function generateChunkObstacles(rng, zStart, zEnd) {
   const obstacles = [];
   const halfTrack = TRACK_WIDTH / 2;
-  const halfLength = TRACK_LENGTH / 2;
 
-  let z = SAFE_ZONE_Z;
-  while (z < halfLength - 2) {
+  // Start obstacles after safe zone or a small offset into the chunk
+  let z = Math.max(zStart + 2, SAFE_ZONE_END);
+  if (z >= zEnd - 1) return obstacles;
+
+  while (z < zEnd - 1) {
     const spacing = OBSTACLE_MIN_SPACING + rng() * (OBSTACLE_MAX_SPACING - OBSTACLE_MIN_SPACING);
     z += spacing;
-    if (z >= halfLength - 1) break;
+    if (z >= zEnd - 1) break;
 
-    // Place obstacle so there's at least MIN_GAP on one side
+    // Place obstacle so there is at least MIN_GAP on one side
     const maxOffset = halfTrack - OBSTACLE_WIDTH / 2 - 0.1;
     const x = (rng() * 2 - 1) * maxOffset;
 
@@ -65,54 +95,54 @@ function generateObstacles(rng) {
   return obstacles;
 }
 
-function generateCoins(rng, obstacles) {
+function generateChunkCoins(rng, obstacles, zStart, zEnd) {
   const coins = [];
   const halfTrack = TRACK_WIDTH / 2;
-  const halfLength = TRACK_LENGTH / 2;
+
+  const effectiveStart = Math.max(zStart, SAFE_ZONE_END);
+  if (effectiveStart >= zEnd) return coins;
 
   // Place 2-3 coins between each pair of obstacles
   for (let i = 0; i < obstacles.length; i++) {
-    const startZ = i === 0 ? SAFE_ZONE_Z : obstacles[i - 1].z + 1;
-    const endZ = obstacles[i].z - 1;
-    const gap = endZ - startZ;
+    const sZ = i === 0 ? effectiveStart + 1 : obstacles[i - 1].z + 1;
+    const eZ = obstacles[i].z - 1;
+    const gap = eZ - sZ;
     if (gap < 2) continue;
 
     const count = gap >= 5 ? 3 : 2;
     const step = gap / (count + 1);
 
     for (let j = 1; j <= count; j++) {
-      const cz = startZ + step * j;
+      const cz = sZ + step * j;
       const cx = (rng() * 2 - 1) * (halfTrack - 0.5);
       coins.push({ x: cx, z: cz });
     }
   }
 
-  // Coins after the last obstacle
-  if (obstacles.length > 0) {
-    const lastZ = obstacles[obstacles.length - 1].z + 1;
-    const gap = halfLength - lastZ;
-    if (gap >= 3) {
-      const count = 2;
-      const step = gap / (count + 1);
+  // Coins after last obstacle (or throughout chunk if no obstacles)
+  const lastZ = obstacles.length > 0 ? obstacles[obstacles.length - 1].z + 1 : effectiveStart + 1;
+  const gap = zEnd - 1 - lastZ;
+  if (gap >= 3) {
+    const count = Math.min(3, Math.max(2, Math.floor(gap / 4)));
+    const step = gap / (count + 1);
+    for (let j = 1; j <= count; j++) {
+      const cz = lastZ + step * j;
+      const cx = (rng() * 2 - 1) * (halfTrack - 0.5);
+      coins.push({ x: cx, z: cz });
+    }
+  }
+
+  // Guarantee at least some coins if chunk is past safe zone
+  if (coins.length === 0 && effectiveStart + 2 < zEnd - 1) {
+    const range = zEnd - 1 - (effectiveStart + 1);
+    if (range > 2) {
+      const count = Math.max(2, Math.floor(range / 5));
+      const step = range / (count + 1);
       for (let j = 1; j <= count; j++) {
-        const cz = lastZ + step * j;
+        const cz = effectiveStart + 1 + step * j;
         const cx = (rng() * 2 - 1) * (halfTrack - 0.5);
         coins.push({ x: cx, z: cz });
       }
-    }
-  }
-
-  // Guarantee at least one coin on the track
-  if (coins.length === 0) {
-    const safeStart = SAFE_ZONE_Z + 1;
-    const safeEnd = halfLength - 2;
-    const range = safeEnd - safeStart;
-    const count = Math.max(3, Math.floor(range / 5));
-    const step = range / (count + 1);
-    for (let j = 1; j <= count; j++) {
-      const cz = safeStart + step * j;
-      const cx = (rng() * 2 - 1) * (halfTrack - 0.5);
-      coins.push({ x: cx, z: cz });
     }
   }
 
@@ -162,11 +192,10 @@ function createTurtleMesh() {
   return group;
 }
 
-function generateTurtle(rng, obstacles) {
+function generateChunkTurtle(rng, obstacles, zStart, zEnd) {
   const halfTrack = TRACK_WIDTH / 2;
-  const halfLength = TRACK_LENGTH / 2;
-  const minZ = SAFE_ZONE_Z + 5;
-  const maxZ = halfLength - 3;
+  const minZ = Math.max(zStart + 2, SAFE_ZONE_END + 3);
+  const maxZ = zEnd - 2;
 
   if (maxZ <= minZ) return null;
 
@@ -188,42 +217,36 @@ function generateTurtle(rng, obstacles) {
     attempts++;
   }
 
-  // Fallback: place in safe zone area
-  const x = (rng() * 2 - 1) * (halfTrack - 0.5);
-  return { x, z: minZ + 2 };
+  return null; // Do not force placement if no clear spot
 }
 
-// Shared geometry and materials for obstacles and coins
-const obstGeo = new THREE.BoxGeometry(OBSTACLE_WIDTH, OBSTACLE_HEIGHT, OBSTACLE_DEPTH);
-const obstMat = new THREE.MeshStandardMaterial({
-  color: 0x8B2222,
-  roughness: 0.5,
-  metalness: 0.2,
-});
-const coinGeo = new THREE.TorusGeometry(COIN_RADIUS, COIN_TUBE, 12, 24);
-const coinMat = new THREE.MeshStandardMaterial({
-  color: 0xFFD700,
-  metalness: 0.8,
-  roughness: 0.2,
-  emissive: 0x554400,
-  emissiveIntensity: 0.3,
-});
+function generateChunk(chunkIndex) {
+  const zStart = chunkIndex * CHUNK_LENGTH;
+  const zEnd = zStart + CHUNK_LENGTH;
+  const zCenter = (zStart + zEnd) / 2;
 
-function generateLevel() {
-  let rng = seededRandom(Date.now());
-  obstacleData = generateObstacles(rng);
-  coinData = generateCoins(rng, obstacleData);
+  // Track section mesh
+  const tMesh = new THREE.Mesh(chunkTrackGeo, trackMat);
+  tMesh.position.set(0, 0, zCenter);
+  tMesh.receiveShadow = true;
+  scene.add(tMesh);
 
-  // Re-generate with a different seed if no coins were placed
-  let retries = 0;
-  while (coinData.length === 0 && retries < 5) {
-    retries++;
-    rng = seededRandom(Date.now() + retries);
-    obstacleData = generateObstacles(rng);
-    coinData = generateCoins(rng, obstacleData);
-  }
+  // Edge lines
+  const eLeft = new THREE.Mesh(chunkEdgeGeo, edgeMat);
+  eLeft.position.set(-TRACK_WIDTH / 2, TRACK_HEIGHT / 2 + 0.04, zCenter);
+  scene.add(eLeft);
 
-  obstacleMeshes = obstacleData.map((o) => {
+  const eRight = new THREE.Mesh(chunkEdgeGeo, edgeMat);
+  eRight.position.set(TRACK_WIDTH / 2, TRACK_HEIGHT / 2 + 0.04, zCenter);
+  scene.add(eRight);
+
+  // Generate content with chunk-specific seed
+  const rng = seededRandom(globalSeed + chunkIndex * 7919);
+  const obsData = generateChunkObstacles(rng, zStart, zEnd);
+  const cData = generateChunkCoins(rng, obsData, zStart, zEnd);
+
+  // Create obstacle meshes
+  const oMeshes = obsData.map((o) => {
     const mesh = new THREE.Mesh(obstGeo, obstMat);
     mesh.position.set(o.x, TRACK_HEIGHT / 2 + OBSTACLE_HEIGHT / 2, o.z);
     mesh.castShadow = true;
@@ -232,47 +255,164 @@ function generateLevel() {
     return mesh;
   });
 
-  coinMeshes = coinData.map((c) => {
+  // Create coin meshes with unique IDs
+  const coinEntries = cData.map((c, i) => {
     const mesh = new THREE.Mesh(coinGeo, coinMat);
     mesh.position.set(c.x, COIN_Y, c.z);
     mesh.rotation.x = Math.PI / 2;
     scene.add(mesh);
-    return mesh;
+    return { mesh, data: { x: c.x, z: c.z, id: 'c_' + chunkIndex + '_' + i } };
   });
 
-  // Generate turtle powerup
-  turtleData = generateTurtle(rng, obstacleData);
-  if (turtleData) {
-    turtleMesh = createTurtleMesh();
-    turtleMesh.position.set(turtleData.x, COIN_Y, turtleData.z);
-    scene.add(turtleMesh);
+  // Maybe generate turtle powerup (30% chance per chunk)
+  let turtleEntry = null;
+  if (rng() < TURTLE_SPAWN_CHANCE) {
+    const td = generateChunkTurtle(rng, obsData, zStart, zEnd);
+    if (td) {
+      const turtleMesh = createTurtleMesh();
+      turtleMesh.position.set(td.x, COIN_Y, td.z);
+      scene.add(turtleMesh);
+      turtleEntry = { mesh: turtleMesh, data: { x: td.x, z: td.z, id: 't_' + chunkIndex } };
+    }
+  }
+
+  chunks.set(chunkIndex, {
+    index: chunkIndex,
+    zStart,
+    zEnd,
+    trackMesh: tMesh,
+    edgeLeft: eLeft,
+    edgeRight: eRight,
+    obstacleMeshes: oMeshes,
+    obstacleData: obsData.map((o) => ({
+      x: o.x,
+      z: o.z,
+      halfW: o.halfW,
+      halfD: o.halfD,
+      height: OBSTACLE_HEIGHT,
+    })),
+    coinEntries,
+    turtleEntry,
+  });
+}
+
+function disposeChunk(chunkIndex) {
+  const chunk = chunks.get(chunkIndex);
+  if (!chunk) return;
+
+  // Remove track and edge meshes from scene
+  scene.remove(chunk.trackMesh);
+  scene.remove(chunk.edgeLeft);
+  scene.remove(chunk.edgeRight);
+
+  // Remove obstacle meshes
+  for (const mesh of chunk.obstacleMeshes) {
+    scene.remove(mesh);
+  }
+
+  // Remove coin meshes
+  for (const entry of chunk.coinEntries) {
+    scene.remove(entry.mesh);
+  }
+
+  // Remove and dispose turtle mesh (has unique geometries/materials)
+  if (chunk.turtleEntry) {
+    chunk.turtleEntry.mesh.traverse((child) => {
+      if (child.isMesh) {
+        child.geometry.dispose();
+        child.material.dispose();
+      }
+    });
+    scene.remove(chunk.turtleEntry.mesh);
+  }
+
+  chunks.delete(chunkIndex);
+}
+
+export function updateRollingTrack(ballZ) {
+  const currentChunk = Math.floor(ballZ / CHUNK_LENGTH);
+  const minChunk = currentChunk - Math.ceil(CLEANUP_DISTANCE / CHUNK_LENGTH);
+  const maxChunk = currentChunk + Math.ceil(LOOKAHEAD_DISTANCE / CHUNK_LENGTH);
+
+  // Generate new chunks in the lookahead range
+  for (let i = minChunk; i <= maxChunk; i++) {
+    if (!chunks.has(i)) {
+      generateChunk(i);
+    }
+  }
+
+  // Remove old chunks behind the ball
+  for (const [idx] of chunks) {
+    if (idx < minChunk) {
+      disposeChunk(idx);
+    }
   }
 }
 
-export function regenerateLevel() {
-  // Remove old obstacle meshes from scene
-  for (const mesh of obstacleMeshes) {
-    scene.remove(mesh);
+export function resetRollingTrack() {
+  // Remove all existing chunks
+  for (const [idx] of chunks) {
+    disposeChunk(idx);
   }
-  obstacleMeshes = [];
-  obstacleData = [];
+  chunks.clear();
 
-  // Remove old coin meshes from scene
-  for (const mesh of coinMeshes) {
-    scene.remove(mesh);
+  // New seed for different layout
+  globalSeed = Date.now();
+
+  // Generate initial chunks around ball start
+  updateRollingTrack(BALL_START_Z);
+}
+
+export function getActiveObstacles() {
+  const result = [];
+  for (const [, chunk] of chunks) {
+    for (const o of chunk.obstacleData) {
+      result.push(o);
+    }
   }
-  coinMeshes = [];
-  coinData = [];
+  return result;
+}
 
-  // Remove old turtle mesh from scene
-  if (turtleMesh) {
-    scene.remove(turtleMesh);
-    turtleMesh = null;
-    turtleData = null;
+export function getActiveCoins() {
+  const result = [];
+  for (const [, chunk] of chunks) {
+    for (const entry of chunk.coinEntries) {
+      if (entry.mesh.visible) {
+        result.push(entry.data);
+      }
+    }
   }
+  return result;
+}
 
-  // Generate fresh layout
-  generateLevel();
+export function getActiveTurtles() {
+  const result = [];
+  for (const [, chunk] of chunks) {
+    if (chunk.turtleEntry && chunk.turtleEntry.mesh.visible) {
+      result.push(chunk.turtleEntry.data);
+    }
+  }
+  return result;
+}
+
+export function hideCoinById(coinId) {
+  for (const [, chunk] of chunks) {
+    for (const entry of chunk.coinEntries) {
+      if (entry.data.id === coinId) {
+        entry.mesh.visible = false;
+        return;
+      }
+    }
+  }
+}
+
+export function hideTurtleById(turtleId) {
+  for (const [, chunk] of chunks) {
+    if (chunk.turtleEntry && chunk.turtleEntry.data.id === turtleId) {
+      chunk.turtleEntry.mesh.visible = false;
+      return;
+    }
+  }
 }
 
 export function initRenderer() {
@@ -297,8 +437,8 @@ export function initRenderer() {
   const ambient = new THREE.AmbientLight(0x404060, 0.8);
   scene.add(ambient);
 
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
-  dirLight.position.set(5, 10, 5);
+  dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+  dirLight.position.set(5, 10, BALL_START_Z + 5);
   dirLight.castShadow = true;
   dirLight.shadow.mapSize.width = 1024;
   dirLight.shadow.mapSize.height = 1024;
@@ -309,29 +449,7 @@ export function initRenderer() {
   dirLight.shadow.camera.top = 30;
   dirLight.shadow.camera.bottom = -30;
   scene.add(dirLight);
-
-  // Track (fixed, never rotates)
-  const trackGeo = new THREE.BoxGeometry(TRACK_WIDTH, TRACK_HEIGHT, TRACK_LENGTH);
-  const trackMat = new THREE.MeshStandardMaterial({
-    color: 0x8B7355,
-    roughness: 0.7,
-    metalness: 0.1,
-  });
-  trackMesh = new THREE.Mesh(trackGeo, trackMat);
-  trackMesh.position.set(0, 0, 0);
-  trackMesh.receiveShadow = true;
-  scene.add(trackMesh);
-
-  // Edge lines for visibility
-  const edgeMat = new THREE.MeshStandardMaterial({ color: 0x5a4a3a, roughness: 0.6 });
-  const edgeGeo = new THREE.BoxGeometry(0.06, 0.08, TRACK_LENGTH);
-  edgeLeft = new THREE.Mesh(edgeGeo, edgeMat);
-  edgeLeft.position.set(-TRACK_WIDTH / 2, TRACK_HEIGHT / 2 + 0.04, 0);
-  scene.add(edgeLeft);
-
-  edgeRight = new THREE.Mesh(edgeGeo, edgeMat);
-  edgeRight.position.set(TRACK_WIDTH / 2, TRACK_HEIGHT / 2 + 0.04, 0);
-  scene.add(edgeRight);
+  scene.add(dirLight.target);
 
   // Ball
   const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 32, 32);
@@ -345,8 +463,8 @@ export function initRenderer() {
   ballMesh.position.set(0, TRACK_HEIGHT / 2 + BALL_RADIUS, BALL_START_Z);
   scene.add(ballMesh);
 
-  // Generate initial level layout
-  generateLevel();
+  // Generate initial track chunks around ball start
+  updateRollingTrack(BALL_START_Z);
 
   // Handle resize
   window.addEventListener('resize', onResize);
@@ -378,6 +496,10 @@ export function updateCamera(ballZ) {
   camera.position.z = ballZ - 8;
   camera.position.y = 4;
   camera.lookAt(0, 0, ballZ);
+
+  // Move directional light to follow ball for proper shadows
+  dirLight.position.set(5, 10, ballZ + 5);
+  dirLight.target.position.set(0, 0, ballZ);
 }
 
 export function render() {
@@ -388,54 +510,21 @@ export function getTrackConfig() {
   return {
     trackWidth: TRACK_WIDTH,
     trackHeight: TRACK_HEIGHT,
-    trackLength: TRACK_LENGTH,
     ballRadius: BALL_RADIUS,
     ballStartZ: BALL_START_Z,
   };
 }
 
-export function getObstacles() {
-  return obstacleData.map((o) => ({
-    x: o.x,
-    z: o.z,
-    halfW: o.halfW,
-    halfD: o.halfD,
-    height: OBSTACLE_HEIGHT,
-  }));
-}
-
-export function getCoins() {
-  return coinData.map((c) => ({ x: c.x, z: c.z }));
-}
-
-export function hideCoin(index) {
-  if (coinMeshes[index]) {
-    coinMeshes[index].visible = false;
-  }
-}
-
-export function showAllCoins() {
-  coinMeshes.forEach((m) => { m.visible = true; });
-}
-
 export function updateCoinRotation(dt) {
-  coinMeshes.forEach((m) => {
-    if (m.visible) {
-      m.rotation.y += 2.0 * dt;
+  for (const [, chunk] of chunks) {
+    for (const entry of chunk.coinEntries) {
+      if (entry.mesh.visible) {
+        entry.mesh.rotation.y += 2.0 * dt;
+      }
     }
-  });
-  // Rotate turtle powerup too
-  if (turtleMesh && turtleMesh.visible) {
-    turtleMesh.rotation.y += 1.5 * dt;
-  }
-}
-
-export function getTurtle() {
-  return turtleData ? { x: turtleData.x, z: turtleData.z } : null;
-}
-
-export function hideTurtle() {
-  if (turtleMesh) {
-    turtleMesh.visible = false;
+    // Rotate turtle powerup too
+    if (chunk.turtleEntry && chunk.turtleEntry.mesh.visible) {
+      chunk.turtleEntry.mesh.rotation.y += 1.5 * dt;
+    }
   }
 }

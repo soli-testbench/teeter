@@ -13,19 +13,19 @@ let ball = {};
 let trackConfig = {};
 let obstacles = [];
 let coins = [];
-let coinsCollected = [];
-let turtle = null;
-let turtleCollected = false;
+let turtles = [];
+let collectedCoinIds = new Set();
+let collectedTurtleIds = new Set();
 let slowdownActive = false;
 let slowdownTimer = 0;
 
 export function initPhysics(config) {
   trackConfig = config;
-  obstacles = config.obstacles || [];
-  coins = config.coins || [];
-  coinsCollected = new Array(coins.length).fill(false);
-  turtle = config.turtle || null;
-  turtleCollected = false;
+  obstacles = [];
+  coins = [];
+  turtles = [];
+  collectedCoinIds = new Set();
+  collectedTurtleIds = new Set();
   slowdownActive = false;
   slowdownTimer = 0;
   resetBall();
@@ -41,10 +41,16 @@ export function resetBall() {
     vz: FORWARD_SPEED,
     falling: false,
   };
-  coinsCollected = new Array(coins.length).fill(false);
-  turtleCollected = false;
+  collectedCoinIds = new Set();
+  collectedTurtleIds = new Set();
   slowdownActive = false;
   slowdownTimer = 0;
+}
+
+export function updateLevelData(newObstacles, newCoins, newTurtles) {
+  obstacles = newObstacles;
+  coins = newCoins;
+  turtles = newTurtles;
 }
 
 export function updatePhysics(dt, tiltAngle, pitch) {
@@ -83,14 +89,14 @@ function updateOnTrack(dt, tiltAngle, pitch) {
   ball.x += ball.vx * dt;
   ball.z += ball.vz * dt;
 
-  // Track boundaries — check if ball center has gone past track edge
+  // Track boundaries -- check if ball center has gone past track edge
   const halfWidth = trackConfig.trackWidth / 2;
   if (Math.abs(ball.x) > halfWidth) {
     ball.falling = true;
     ball.vy = 0;
   }
 
-  // Obstacle collision — AABB check with ball radius margin
+  // Obstacle collision -- AABB check with ball radius margin
   let obstacleHit = false;
   if (!ball.falling) {
     const br = trackConfig.ballRadius;
@@ -110,39 +116,33 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     }
   }
 
-  // Coin collection — distance check in XZ plane
+  // Coin collection -- distance check in XZ plane using unique IDs
   const newlyCollected = [];
-  for (let i = 0; i < coins.length; i++) {
-    if (coinsCollected[i]) continue;
-    const dx = ball.x - coins[i].x;
-    const dz = ball.z - coins[i].z;
+  for (const coin of coins) {
+    if (collectedCoinIds.has(coin.id)) continue;
+    const dx = ball.x - coin.x;
+    const dz = ball.z - coin.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
     if (dist < COIN_COLLECT_RADIUS) {
-      coinsCollected[i] = true;
-      newlyCollected.push(i);
+      collectedCoinIds.add(coin.id);
+      newlyCollected.push(coin.id);
     }
   }
 
-  // Turtle collection — distance check in XZ plane
-  let turtleJustCollected = false;
-  if (turtle && !turtleCollected) {
-    const dx = ball.x - turtle.x;
-    const dz = ball.z - turtle.z;
+  // Turtle collection -- distance check in XZ plane using unique IDs
+  let turtleJustCollected = null;
+  for (const t of turtles) {
+    if (collectedTurtleIds.has(t.id)) continue;
+    const dx = ball.x - t.x;
+    const dz = ball.z - t.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
     if (dist < TURTLE_COLLECT_RADIUS) {
-      turtleCollected = true;
-      turtleJustCollected = true;
+      collectedTurtleIds.add(t.id);
+      turtleJustCollected = t.id;
       slowdownActive = true;
       slowdownTimer = SLOWDOWN_DURATION;
+      break;
     }
-  }
-
-  // Track end — wrap back to start if ball reaches the end
-  let trackCompleted = false;
-  const halfLength = trackConfig.trackLength / 2;
-  if (ball.z > halfLength) {
-    ball.z = -halfLength + 1;
-    trackCompleted = true;
   }
 
   return {
@@ -157,7 +157,6 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     coinsCollected: newlyCollected,
     turtleCollected: turtleJustCollected,
     slowdownActive,
-    trackCompleted,
   };
 }
 
@@ -181,18 +180,9 @@ function updateFalling(dt) {
     needsReset,
     obstacleHit: false,
     coinsCollected: [],
-    turtleCollected: false,
+    turtleCollected: null,
     slowdownActive,
-    trackCompleted: false,
   };
-}
-
-export function refreshLevel(config) {
-  obstacles = config.obstacles || [];
-  coins = config.coins || [];
-  coinsCollected = new Array(coins.length).fill(false);
-  turtle = config.turtle || null;
-  turtleCollected = false;
 }
 
 export function getBallState() {

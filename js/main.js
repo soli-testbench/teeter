@@ -6,18 +6,18 @@ import {
   updateCamera,
   render,
   getTrackConfig,
-  getObstacles,
-  getCoins,
-  hideCoin,
-  showAllCoins,
+  updateRollingTrack,
+  resetRollingTrack,
+  getActiveObstacles,
+  getActiveCoins,
+  getActiveTurtles,
+  hideCoinById,
+  hideTurtleById,
   updateCoinRotation,
-  regenerateLevel,
-  getTurtle,
-  hideTurtle,
 } from './renderer.js';
 
 import { initTracker, calibrate, detectTilt, detectPitch, resetTilt } from './tracker.js';
-import { initPhysics, updatePhysics, resetBall, refreshLevel } from './physics.js';
+import { initPhysics, updatePhysics, resetBall, updateLevelData } from './physics.js';
 
 const overlay = document.getElementById('overlay');
 const subtitle = overlay.querySelector('.subtitle');
@@ -43,6 +43,7 @@ let lastTime = 0;
 let resetTimer = null;
 let score = 0;
 let finalScore = 0;
+let currentBallZ = -20; // Track ball Z for rolling chunk updates
 
 function updateScore(value) {
   score = value;
@@ -70,7 +71,7 @@ function saveScores(scores) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
   } catch {
-    // storage unavailable — silently fail
+    // storage unavailable -- silently fail
   }
 }
 
@@ -166,13 +167,11 @@ function exitGameOver() {
   gameoverOverlay.classList.remove('visible');
   nameEntry.classList.remove('visible');
 
-  // Reset the game
-  regenerateLevel();
+  // Reset the rolling track and game state
+  resetRollingTrack();
   const config = getTrackConfig();
-  config.obstacles = getObstacles();
-  config.coins = getCoins();
-  config.turtle = getTurtle();
   initPhysics(config);
+  currentBallZ = config.ballStartZ;
   slowdownIndicator.classList.remove('visible');
   resetTilt();
   calibrate(performance.now());
@@ -214,15 +213,11 @@ leaderboardPanel.addEventListener('click', (e) => {
 
 async function init() {
   try {
-    // Initialize Three.js renderer
+    // Initialize Three.js renderer and rolling track
     initRenderer();
     const config = getTrackConfig();
-
-    // Attach obstacle, coin, and turtle data to config for physics
-    config.obstacles = getObstacles();
-    config.coins = getCoins();
-    config.turtle = getTurtle();
     initPhysics(config);
+    currentBallZ = config.ballStartZ;
 
     // Initial render so the scene is visible during loading
     render();
@@ -280,8 +275,15 @@ function gameLoop(timestamp) {
     const tiltAngle = detectTilt(timestamp);
     const pitch = detectPitch();
 
+    // Update rolling track chunks based on current ball position
+    updateRollingTrack(currentBallZ);
+
+    // Sync physics with active level data from visible chunks
+    updateLevelData(getActiveObstacles(), getActiveCoins(), getActiveTurtles());
+
     // Update physics
     const result = updatePhysics(dt, tiltAngle, pitch);
+    currentBallZ = result.z;
 
     // Update renderer
     updateBallPosition(result.x, result.y, result.z);
@@ -293,15 +295,15 @@ function gameLoop(timestamp) {
 
     // Handle coin collection
     if (result.coinsCollected && result.coinsCollected.length > 0) {
-      for (const idx of result.coinsCollected) {
-        hideCoin(idx);
+      for (const coinId of result.coinsCollected) {
+        hideCoinById(coinId);
         updateScore(score + 1);
       }
     }
 
     // Handle turtle collection
     if (result.turtleCollected) {
-      hideTurtle();
+      hideTurtleById(result.turtleCollected);
     }
 
     // Show/hide slowdown indicator
@@ -309,20 +311,6 @@ function gameLoop(timestamp) {
       slowdownIndicator.classList.add('visible');
     } else {
       slowdownIndicator.classList.remove('visible');
-    }
-
-    // Handle track completion — regenerate level with fresh coins
-    if (result.trackCompleted) {
-      regenerateLevel();
-      const config = getTrackConfig();
-      config.obstacles = getObstacles();
-      config.coins = getCoins();
-      config.turtle = getTurtle();
-      initPhysics(config);
-      resetBallRotation();
-      slowdownIndicator.classList.remove('visible');
-      updateBallPosition(0, config.trackHeight / 2 + config.ballRadius, config.ballStartZ);
-      updateCamera(config.ballStartZ);
     }
 
     // Handle state transitions
