@@ -8,6 +8,9 @@ const RIGHT_EYE_OUTER = 263;
 // Landmark indices for pitch detection
 const NOSE_TIP = 1;
 const FOREHEAD = 10;
+// Landmark indices for mouth-open detection
+const UPPER_LIP = 13;
+const LOWER_LIP = 14;
 
 let faceLandmarker = null;
 let videoElement = null;
@@ -15,6 +18,8 @@ let rawTilt = 0;
 let smoothedTilt = 0;
 let rawPitch = 0;
 let smoothedPitch = 0;
+let rawMouthOpen = 0;
+let smoothedMouthOpen = 0;
 const SMOOTHING_FACTOR = 0.7;
 
 // Calibration offset: the face X position at neutral/center
@@ -96,6 +101,12 @@ export function detectTilt(timestamp) {
     const forehead = landmarks[FOREHEAD];
     rawPitch = nose.y - forehead.y;
     smoothedPitch = smoothedPitch * SMOOTHING_FACTOR + rawPitch * (1 - SMOOTHING_FACTOR);
+
+    // Compute mouth openness from upper and lower lip distance
+    const upperLip = landmarks[UPPER_LIP];
+    const lowerLip = landmarks[LOWER_LIP];
+    rawMouthOpen = lowerLip.y - upperLip.y;
+    smoothedMouthOpen = smoothedMouthOpen * SMOOTHING_FACTOR + rawMouthOpen * (1 - SMOOTHING_FACTOR);
   }
 
   return smoothedTilt;
@@ -105,11 +116,20 @@ export function detectPitch() {
   return smoothedPitch;
 }
 
+export function detectMouthOpen() {
+  // Threshold tuned for normalized landmark coordinates;
+  // typical closed mouth ~0.01-0.02, open mouth ~0.04+
+  const MOUTH_OPEN_THRESHOLD = 0.035;
+  return smoothedMouthOpen > MOUTH_OPEN_THRESHOLD;
+}
+
 export function resetTilt() {
   rawTilt = 0;
   smoothedTilt = 0;
   rawPitch = 0;
   smoothedPitch = 0;
+  rawMouthOpen = 0;
+  smoothedMouthOpen = 0;
   calibrationOffset = 0.5;
   needsCalibration = true;
 }
