@@ -16,7 +16,7 @@ import {
   updateCoinRotation,
 } from './renderer.js';
 
-import { initTracker, calibrate, detectTilt, detectPitch, detectMouthOpen, resetTilt } from './tracker.js';
+import { initTracker, calibrate, detectTilt, detectPitch, detectMouthOpen, detectBlink, resetTilt } from './tracker.js';
 import { initPhysics, updatePhysics, resetBall, updateLevelData } from './physics.js';
 
 const overlay = document.getElementById('overlay');
@@ -273,10 +273,11 @@ function gameLoop(timestamp) {
   lastTime = timestamp;
 
   if (state === 'playing' || state === 'falling') {
-    // Get head tilt, pitch, and mouth-open state
+    // Get head tilt, pitch, mouth-open, and blink state
     const tiltAngle = detectTilt(timestamp);
     const pitch = detectPitch();
     const mouthOpen = detectMouthOpen();
+    const blinkDetected = detectBlink();
 
     // Update rolling track chunks based on current ball position
     updateRollingTrack(currentBallZ);
@@ -285,7 +286,7 @@ function gameLoop(timestamp) {
     updateLevelData(getActiveObstacles(), getActiveCoins(), getActiveTurtles());
 
     // Update physics
-    const result = updatePhysics(dt, tiltAngle, pitch, mouthOpen);
+    const result = updatePhysics(dt, tiltAngle, pitch, mouthOpen, blinkDetected);
     currentBallZ = result.z;
 
     // Update renderer

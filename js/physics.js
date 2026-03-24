@@ -5,6 +5,7 @@ const FORWARD_SPEED = 4.5;
 const PITCH_SENSITIVITY = 3.0;
 const MAX_SPEED = 11.0;
 const MOUTH_BOOST_MULTIPLIER = 1.8; // Speed multiplier when mouth is open
+const JUMP_IMPULSE = 6.0; // Upward velocity for jump (clears ~1.84 units)
 const MAX_DT = 1 / 30; // Cap delta time to prevent physics explosions
 const COIN_COLLECT_RADIUS = 0.8;
 const TURTLE_COLLECT_RADIUS = 0.8;
@@ -41,6 +42,7 @@ export function resetBall() {
     vy: 0,
     vz: FORWARD_SPEED,
     falling: false,
+    jumping: false,
   };
   collectedCoinIds = new Set();
   collectedTurtleIds = new Set();
@@ -54,17 +56,17 @@ export function updateLevelData(newObstacles, newCoins, newTurtles) {
   turtles = newTurtles;
 }
 
-export function updatePhysics(dt, tiltAngle, pitch, mouthOpen) {
+export function updatePhysics(dt, tiltAngle, pitch, mouthOpen, blinkDetected) {
   dt = Math.min(dt, MAX_DT);
 
   if (ball.falling) {
     return updateFalling(dt);
   }
 
-  return updateOnTrack(dt, tiltAngle, pitch, mouthOpen);
+  return updateOnTrack(dt, tiltAngle, pitch, mouthOpen, blinkDetected);
 }
 
-function updateOnTrack(dt, tiltAngle, pitch, mouthOpen) {
+function updateOnTrack(dt, tiltAngle, pitch, mouthOpen, blinkDetected) {
   // Decrement slowdown timer
   if (slowdownActive) {
     slowdownTimer -= dt;
@@ -93,20 +95,43 @@ function updateOnTrack(dt, tiltAngle, pitch, mouthOpen) {
   const pitchVal = pitch || 0;
   ball.vz = Math.max(0, Math.min(effectiveMax, effectiveForward * (1 + pitchVal * PITCH_SENSITIVITY)));
 
+  // Trigger jump on blink if ball is on track (not already jumping or falling)
+  if (blinkDetected && !ball.jumping && !ball.falling) {
+    ball.jumping = true;
+    ball.vy = JUMP_IMPULSE;
+  }
+
+  // Apply jump physics (gravity and vertical movement)
+  const trackSurface = trackConfig.trackHeight / 2 + trackConfig.ballRadius;
+  if (ball.jumping) {
+    ball.vy -= GRAVITY * dt;
+    ball.y += ball.vy * dt;
+
+    // Land when ball returns to track surface
+    if (ball.y <= trackSurface) {
+      ball.y = trackSurface;
+      ball.vy = 0;
+      ball.jumping = false;
+    }
+  }
+
   // Update position
   ball.x += ball.vx * dt;
   ball.z += ball.vz * dt;
 
   // Track boundaries -- check if ball center has gone past track edge
+  // (can still fall off edges during a jump)
   const halfWidth = trackConfig.trackWidth / 2;
   if (Math.abs(ball.x) > halfWidth) {
     ball.falling = true;
+    ball.jumping = false;
     ball.vy = 0;
   }
 
   // Obstacle collision -- AABB check with ball radius margin
+  // Skip obstacle collisions while airborne from a jump
   let obstacleHit = false;
-  if (!ball.falling) {
+  if (!ball.falling && !ball.jumping) {
     const br = trackConfig.ballRadius;
     for (let i = 0; i < obstacles.length; i++) {
       const o = obstacles[i];
@@ -160,6 +185,7 @@ function updateOnTrack(dt, tiltAngle, pitch, mouthOpen) {
     vx: ball.vx,
     vz: ball.vz,
     falling: ball.falling,
+    jumping: ball.jumping,
     needsReset: false,
     obstacleHit,
     coinsCollected: newlyCollected,

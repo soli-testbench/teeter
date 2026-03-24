@@ -11,6 +11,11 @@ const FOREHEAD = 10;
 // Landmark indices for mouth-open detection
 const UPPER_LIP = 13;
 const LOWER_LIP = 14;
+// Landmark indices for blink detection (upper/lower eyelid)
+const LEFT_EYE_UPPER = 159;
+const LEFT_EYE_LOWER = 145;
+const RIGHT_EYE_UPPER = 386;
+const RIGHT_EYE_LOWER = 374;
 
 let faceLandmarker = null;
 let videoElement = null;
@@ -20,7 +25,11 @@ let rawPitch = 0;
 let smoothedPitch = 0;
 let rawMouthOpen = 0;
 let smoothedMouthOpen = 0;
+let rawEyeOpen = 1;
+let smoothedEyeOpen = 1;
+let lastBlinkTime = 0;
 const SMOOTHING_FACTOR = 0.7;
+const BLINK_COOLDOWN_MS = 500;
 
 // Calibration offset: the face X position at neutral/center
 let calibrationOffset = 0.5;
@@ -110,6 +119,18 @@ export function detectTilt(timestamp) {
     const eyeDist = Math.abs(rightEye.x - leftEye.x);
     rawMouthOpen = eyeDist > 0.01 ? mouthDist / eyeDist : 0;
     smoothedMouthOpen = smoothedMouthOpen * SMOOTHING_FACTOR + rawMouthOpen * (1 - SMOOTHING_FACTOR);
+
+    // Compute eye openness from upper/lower eyelid distances,
+    // averaged across both eyes and normalized by inter-eye distance
+    const leftEyeUpper = landmarks[LEFT_EYE_UPPER];
+    const leftEyeLower = landmarks[LEFT_EYE_LOWER];
+    const rightEyeUpper = landmarks[RIGHT_EYE_UPPER];
+    const rightEyeLower = landmarks[RIGHT_EYE_LOWER];
+    const leftEyeDist = Math.abs(leftEyeLower.y - leftEyeUpper.y);
+    const rightEyeDist = Math.abs(rightEyeLower.y - rightEyeUpper.y);
+    const avgEyeDist = (leftEyeDist + rightEyeDist) / 2;
+    rawEyeOpen = eyeDist > 0.01 ? avgEyeDist / eyeDist : 1;
+    smoothedEyeOpen = smoothedEyeOpen * SMOOTHING_FACTOR + rawEyeOpen * (1 - SMOOTHING_FACTOR);
   }
 
   return smoothedTilt;
@@ -126,6 +147,18 @@ export function detectMouthOpen() {
   return smoothedMouthOpen > MOUTH_OPEN_THRESHOLD;
 }
 
+export function detectBlink() {
+  // Threshold for eye openness normalized by inter-eye distance;
+  // typical open eye ~0.06-0.08, closed eye ~0.01-0.02
+  const BLINK_THRESHOLD = 0.04;
+  const now = performance.now();
+  if (smoothedEyeOpen < BLINK_THRESHOLD && now - lastBlinkTime > BLINK_COOLDOWN_MS) {
+    lastBlinkTime = now;
+    return true;
+  }
+  return false;
+}
+
 export function resetTilt() {
   rawTilt = 0;
   smoothedTilt = 0;
@@ -133,6 +166,9 @@ export function resetTilt() {
   smoothedPitch = 0;
   rawMouthOpen = 0;
   smoothedMouthOpen = 0;
+  rawEyeOpen = 1;
+  smoothedEyeOpen = 1;
+  lastBlinkTime = 0;
   calibrationOffset = 0.5;
   needsCalibration = true;
 }
