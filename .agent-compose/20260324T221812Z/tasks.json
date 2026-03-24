@@ -1,0 +1,255 @@
+{
+  "quality": "full",
+  "tasks": [
+    {
+      "id": "blink-jump",
+      "title": "Add blink-to-jump mechanic",
+      "description": "Implement blink detection in tracker.js using MediaPipe Eye Aspect Ratio (EAR), add jump physics to physics.js (impulse, gravity, landing), wire blink signal through main.js game loop, and skip obstacle collisions while airborne.",
+      "acceptance_criteria": "1. detectBlink() exported from tracker.js returns true on blink using EAR with MediaPipe eye landmarks.\n2. Blink detection has ~500ms cooldown between triggers.\n3. Blink triggers upward velocity impulse when ball is on track (not jumping or falling).\n4. Gravity creates natural jump arc; ball lands back on track when y returns to ground.\n5. Obstacle and turtle collisions skipped while ball is airborne.\n6. Jump height clears wall obstacles (OBSTACLE_HEIGHT=1.0) and turtle powerups.\n7. Ball can still fall off track edges during a jump.\n8. Lateral steering (head tilt) works during a jump.",
+      "claudeMd": "# Blink-to-Jump Mechanic Implementation\n\nYou are adding a blink-to-jump mechanic to an existing Three.js ball-rolling game. The game uses MediaPipe FaceLandmarker for head tracking. Pure static HTML+JS served by nginx — no npm, no build step.\n\n## Codebase\n\n- `index.html` — Main page with Three.js importmap, overlay UI, and all CSS\n- `js/main.js` — Game loop: calls detectTilt/detectPitch, then updatePhysics, then renders\n- `js/physics.js` — Ball physics, collision detection, coin/turtle collection\n- `js/renderer.js` — Three.js scene, mesh creation, level generation — DO NOT MODIFY\n- `js/tracker.js` — MediaPipe head tilt/pitch detection — you will ADD to this file\n- `Dockerfile` + `nginx.conf` — Docker build serving on port 8080\n\n## Conventions\n\n- 2-space indent throughout all files\n- ES module imports/exports\n- camelCase for functions/variables, UPPER_SNAKE for constants\n- `let` for module-level mutable state, `const` for constants\n- Follow existing return-object patterns in physics.js\n- Match the existing code style exactly — grep for patterns before writing\n\n## Part 1: tracker.js — Add detectBlink()\n\n### How it works\n\nThe existing `detectTilt(timestamp)` calls `faceLandmarker.detectForVideo()` and stores results in `landmarks`. You must:\n\n1. Store the landmarks from `detectTilt()` in a module-level variable so `detectBlink()` can access them without calling detectForVideo again.\n\n2. Add EAR (Eye Aspect Ratio) computation using these MediaPipe landmark indices:\n\n   **Right eye**: P1=33, P2=159, P3=158, P4=133, P5=153, P6=145\n   **Left eye**: P1=362, P2=386, P3=385, P4=263, P5=374, P6=380\n\n   ```\n   EAR = (dist(P2,P6) + dist(P3,P5)) / (2.0 * dist(P1,P4))\n   ```\n\n   Average both eyes' EAR for robustness.\n\n3. Add blink state tracking:\n   - `let lastEAR = 1.0` — previous frame's EAR\n   - `let blinkDetected = false` — true on the frame EAR drops below threshold\n   - `let lastBlinkTime = 0` — timestamp of last blink detection\n   - `const EAR_THRESHOLD = 0.21` — below this = eyes closed\n   - `const BLINK_COOLDOWN = 500` — ms between allowed blinks\n\n4. Export `detectBlink()` function:\n   - If no landmarks stored, return false\n   - Compute average EAR from both eyes\n   - Detect transition: EAR was >= threshold last frame AND is now < threshold\n   - Check cooldown: `performance.now() - lastBlinkTime >= BLINK_COOLDOWN`\n   - If blink detected and cooldown passed: set `lastBlinkTime = performance.now()`, update lastEAR, return true\n   - Otherwise update lastEAR, return false\n\n5. Reset blink state in `resetTilt()` — add `lastEAR = 1.0; blinkDetected = false;`\n\n### Important: Reuse detection results\n\nThe `detectTilt()` function already calls `faceLandmarker.detectForVideo()`. Store the landmarks in a module-level variable:\n```js\nlet currentLandmarks = null;\n```\nIn `detectTilt()`, after checking `results.faceLandmarks.length > 0`, set:\n```js\ncurrentLandmarks = landmarks; // the landmarks variable already exists\n```\nThen `detectBlink()` reads from `currentLandmarks`.\n\n## Part 2: physics.js — Add Jump Physics\n\n### New constants (add near existing constants at top):\n```js\nconst JUMP_IMPULSE = 6.5;   // initial upward velocity\nconst JUMP_GRAVITY = 12.0;  // gravity during jump (separate from fall GRAVITY for game feel)\n```\n\n### Modify ball state in resetBall():\nAdd `jumping: false` to the ball initialization object.\n\n### Modify updatePhysics signature:\nChange from `updatePhysics(dt, tiltAngle, pitch)` to `updatePhysics(dt, tiltAngle, pitch, blink)`.\nPass `blink` through to `updateOnTrack`.\n\n### Modify updateOnTrack(dt, tiltAngle, pitch, blink):\n\n1. **Jump initiation** — after position update but BEFORE obstacle collision:\n   ```js\n   if (blink && !ball.jumping && !ball.falling) {\n     ball.jumping = true;\n     ball.vy = JUMP_IMPULSE;\n   }\n   ```\n\n2. **Jump physics** — if ball.jumping, apply jump gravity and update Y:\n   ```js\n   if (ball.jumping) {\n     ball.vy -= JUMP_GRAVITY * dt;\n     ball.y += ball.vy * dt;\n     const groundY = trackConfig.trackHeight / 2 + trackConfig.ballRadius;\n     if (ball.y <= groundY) {\n       ball.y = groundY;\n       ball.vy = 0;\n       ball.jumping = false;\n     }\n   }\n   ```\n\n3. **Skip obstacle collision while jumping** — wrap the existing obstacle collision block:\n   ```js\n   if (!ball.falling && !ball.jumping) {\n     // existing obstacle AABB collision code\n   }\n   ```\n\n4. **Skip coin and turtle collection while jumping** — wrap existing collection blocks:\n   ```js\n   if (!ball.jumping) {\n     // existing coin collection code\n     // existing turtle collection code\n   }\n   ```\n\n5. **Track edge check still applies during jumps** — the existing edge boundary check (`Math.abs(ball.x) > halfWidth`) should still run during jumps. Do NOT wrap it in a jumping check.\n\n6. **Add `jumping` to return object**: Add `jumping: ball.jumping` to the return.\n\n### Modify updateFalling return:\nAdd `jumping: false` to the return object.\n\n## Part 3: main.js — Wire It Up\n\n1. **Import**: Add `detectBlink` to the import from `./tracker.js`.\n\n2. **In gameLoop**, after getting tiltAngle and pitch:\n   ```js\n   const blink = detectBlink();\n   ```\n\n3. **Pass blink to updatePhysics**:\n   ```js\n   const result = updatePhysics(dt, tiltAngle, pitch, blink);\n   ```\n\nThat's it for main.js — the jump state is handled inside physics.js.\n\n## Tuning Notes\n\n- JUMP_IMPULSE=6.5, JUMP_GRAVITY=12.0 gives peak height = 6.5^2 / (2*12) ≈ 1.76 units above ground\n- OBSTACLE_HEIGHT=1.0, sits on track at trackHeight/2=0.1, so obstacle top is at 1.1 above track surface\n- Ball radius is 0.3, ball center at ground is at 0.4 above track surface\n- During jump, ball center peak is at 0.4 + 1.76 = 2.16 — comfortably clears obstacle top at 1.1 + 0.3 = 1.4 (with ball radius)\n- EAR_THRESHOLD=0.21 is a well-tested value from research; adjust to 0.22-0.25 if too sensitive\n\n## Verification\n\n- `docker build -t teeter .` must succeed\n- Game loads, camera works, tilt steering works as before\n- Blinking triggers a visible upward arc of the ball\n- Ball clears red obstacle boxes when jumping\n- Ball lands smoothly back on track\n- Rapid blinks don't cause multiple jumps (cooldown works)\n- Ball can still fall off edges during a jump\n- Score, coins, turtles, wrapping all still work",
+      "checklist": [
+        {
+          "id": "t1",
+          "description": "Store landmarks from detectTilt() in module-level variable for reuse by detectBlink()",
+          "steps": [
+            "Add `let currentLandmarks = null;` at module level in tracker.js",
+            "In detectTilt(), after landmarks are accessed, set `currentLandmarks = landmarks;`",
+            "Verify detectTilt() still returns smoothedTilt correctly"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t2",
+          "description": "Implement EAR computation helper using correct MediaPipe eye landmark indices",
+          "steps": [
+            "Add landmark index constants: RIGHT_EYE_EAR = [33, 159, 158, 133, 153, 145], LEFT_EYE_EAR = [362, 386, 385, 263, 374, 380]",
+            "Add helper function to compute distance between two 3D landmark points",
+            "Add function to compute EAR for a single eye from 6 landmark points using formula: (dist(P2,P6) + dist(P3,P5)) / (2 * dist(P1,P4))",
+            "Verify the function returns ~0.3 for open eyes and ~0.1-0.15 for closed eyes"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t3",
+          "description": "Export detectBlink() with threshold and cooldown logic",
+          "steps": [
+            "Add module-level state: lastEAR=1.0, lastBlinkTime=0, EAR_THRESHOLD=0.21, BLINK_COOLDOWN=500",
+            "Implement detectBlink(): return false if no currentLandmarks; compute avg EAR; detect downward transition (lastEAR >= threshold AND current < threshold); check cooldown; update lastBlinkTime on detection; update lastEAR; return boolean",
+            "Add detectBlink to exports",
+            "Reset blink state in resetTilt()"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t4",
+          "description": "Add jump constants and jumping state to physics.js ball",
+          "steps": [
+            "Add JUMP_IMPULSE = 6.5 and JUMP_GRAVITY = 12.0 constants near existing constants",
+            "Add `jumping: false` to the ball object in resetBall()",
+            "Verify resetBall() properly resets jumping state"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t5",
+          "description": "Implement jump initiation in updateOnTrack when blink is detected",
+          "steps": [
+            "Change updatePhysics signature to accept blink parameter: updatePhysics(dt, tiltAngle, pitch, blink)",
+            "Pass blink to updateOnTrack: updateOnTrack(dt, tiltAngle, pitch, blink)",
+            "In updateOnTrack, after position update and before obstacle collision: if (blink && !ball.jumping && !ball.falling) set ball.jumping=true, ball.vy=JUMP_IMPULSE",
+            "Verify jump only initiates when ball is on track (not already jumping or falling)"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t6",
+          "description": "Implement jump arc physics with gravity and landing",
+          "steps": [
+            "In updateOnTrack, when ball.jumping: apply ball.vy -= JUMP_GRAVITY * dt, then ball.y += ball.vy * dt",
+            "Compute groundY = trackConfig.trackHeight / 2 + trackConfig.ballRadius",
+            "When ball.y <= groundY during jump: clamp ball.y = groundY, ball.vy = 0, ball.jumping = false",
+            "Verify the ball follows a smooth parabolic arc and lands cleanly"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t7",
+          "description": "Skip obstacle/turtle collisions while ball is airborne from jump",
+          "steps": [
+            "Wrap obstacle collision AABB check with: if (!ball.falling && !ball.jumping)",
+            "Wrap coin collection distance checks with: if (!ball.jumping)",
+            "Wrap turtle collection distance check with: if (!ball.jumping) (can combine with coin check)",
+            "Verify ball passes over red obstacles when jumping",
+            "Verify ball can still collect coins when on ground"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t8",
+          "description": "Ensure lateral steering and edge-falling still work during jump",
+          "steps": [
+            "Verify the tilt-based lateral velocity code runs BEFORE and independently of jump checks",
+            "Verify track edge boundary check (Math.abs(ball.x) > halfWidth) is NOT wrapped in a !jumping guard",
+            "Verify ball can fall off edge during a jump if steered laterally past boundary"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t9",
+          "description": "Wire detectBlink into main.js game loop and pass to updatePhysics",
+          "steps": [
+            "Add detectBlink to the import statement from './tracker.js'",
+            "In gameLoop, after const pitch = detectPitch(), add: const blink = detectBlink()",
+            "Change updatePhysics call to: updatePhysics(dt, tiltAngle, pitch, blink)",
+            "Verify the game loop compiles and runs without errors"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t10",
+          "description": "Add jumping flag to all physics return objects",
+          "steps": [
+            "Add jumping: ball.jumping to updateOnTrack return object",
+            "Add jumping: false to updateFalling return object",
+            "Verify main.js game loop receives result.jumping field"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t11",
+          "description": "Build verification — Docker build succeeds",
+          "steps": [
+            "Run: docker build -t teeter .",
+            "Verify build completes successfully with exit code 0"
+          ],
+          "passes": false
+        }
+      ],
+      "quality_checklist": [
+        {
+          "id": "q1",
+          "description": "EAR landmark indices match MediaPipe Face Mesh specification exactly",
+          "steps": [
+            "Verify right eye indices: 33 (outer), 159 (upper), 158 (upper2), 133 (inner), 153 (lower), 145 (lower2)",
+            "Verify left eye indices: 362 (outer), 386 (upper), 385 (upper2), 263 (inner), 374 (lower), 380 (lower2)",
+            "Verify EAR formula computes (vert1 + vert2) / (2 * horiz) correctly"
+          ],
+          "passes": false
+        },
+        {
+          "id": "q2",
+          "description": "No duplicate detectForVideo calls — blink detection reuses landmarks from detectTilt",
+          "steps": [
+            "Check that detectBlink() does NOT call faceLandmarker.detectForVideo()",
+            "Verify detectTilt() stores landmarks in a module-level variable",
+            "Verify detectBlink() reads from that variable"
+          ],
+          "passes": false
+        },
+        {
+          "id": "q3",
+          "description": "Jump physics constants are analytically sound for clearing obstacles",
+          "steps": [
+            "Verify peak height = JUMP_IMPULSE^2 / (2 * JUMP_GRAVITY) is greater than OBSTACLE_HEIGHT + ballRadius",
+            "Check that OBSTACLE_HEIGHT is 1.0 (from renderer.js) and ballRadius is 0.3",
+            "Confirm peak of ~1.76 units clears the required ~1.4 units"
+          ],
+          "passes": false
+        },
+        {
+          "id": "q4",
+          "description": "Code style matches existing codebase conventions exactly",
+          "steps": [
+            "Verify 2-space indentation throughout all changes",
+            "Verify camelCase for functions/variables, UPPER_SNAKE for constants",
+            "Verify no unnecessary comments, no over-engineering, no extra imports",
+            "Verify export style matches existing pattern (named exports)"
+          ],
+          "passes": false
+        },
+        {
+          "id": "q5",
+          "description": "No state leaks — all new state properly reset on game restart",
+          "steps": [
+            "Verify ball.jumping is reset to false in resetBall()",
+            "Verify blink detection state (lastEAR, lastBlinkTime) is reset in resetTilt()",
+            "Verify currentLandmarks is handled gracefully when null"
+          ],
+          "passes": false
+        }
+      ]
+    }
+  ],
+  "integration": null,
+  "verification": {
+    "buildCommand": "docker build -t teeter .",
+    "runCommand": "docker run -d -p 8080:8080 teeter",
+    "readySignal": "listening|ready|started|Configuration complete",
+    "appType": "web",
+    "port": 8080,
+    "checks": [
+      {
+        "id": "v1",
+        "description": "Game loads and camera/tracking works as before",
+        "steps": [
+          "Open http://localhost:8080 in browser",
+          "Allow camera access",
+          "Verify face tracking loads and ball responds to head tilt",
+          "Verify score display is visible"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v2",
+        "description": "Blinking triggers a visible upward jump arc",
+        "steps": [
+          "While playing, perform a deliberate blink",
+          "Observe the red ball launching upward in a smooth arc",
+          "Observe the ball landing back on the track surface"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v3",
+        "description": "Jump clears wall obstacles (red boxes)",
+        "steps": [
+          "Roll toward a red obstacle box",
+          "Blink to trigger a jump before reaching it",
+          "Verify the ball arcs over the obstacle without game over"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v4",
+        "description": "Rapid blinks do not cause multiple jumps (cooldown works)",
+        "steps": [
+          "Blink rapidly several times",
+          "Verify only one jump occurs per ~500ms cooldown period",
+          "Verify no double-jump or mid-air re-jump"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v5",
+        "description": "Ball can still fall off track edges during a jump",
+        "steps": [
+          "Trigger a jump with a blink",
+          "While airborne, tilt head to steer ball toward track edge",
+          "Verify the ball falls off the edge and triggers game over"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v6",
+        "description": "Existing gameplay mechanics still work (coins, turtles, obstacles, wrapping, score)",
+        "steps": [
+          "Roll over gold coins and verify score increments",
+          "Collide with a red obstacle on the ground and verify game over triggers",
+          "Verify turtle powerup collection still causes slowdown",
+          "Verify track wrapping still regenerates the level"
+        ],
+        "passes": false
+      }
+    ]
+  }
+}
