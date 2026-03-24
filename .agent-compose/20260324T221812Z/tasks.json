@@ -16,7 +16,7 @@
             "In detectTilt(), after landmarks are accessed, set `currentLandmarks = landmarks;`",
             "Verify detectTilt() still returns smoothedTilt correctly"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t2",
@@ -27,7 +27,7 @@
             "Add function to compute EAR for a single eye from 6 landmark points using formula: (dist(P2,P6) + dist(P3,P5)) / (2 * dist(P1,P4))",
             "Verify the function returns ~0.3 for open eyes and ~0.1-0.15 for closed eyes"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t3",
@@ -38,7 +38,7 @@
             "Add detectBlink to exports",
             "Reset blink state in resetTilt()"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t4",
@@ -48,7 +48,7 @@
             "Add `jumping: false` to the ball object in resetBall()",
             "Verify resetBall() properly resets jumping state"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t5",
@@ -59,7 +59,7 @@
             "In updateOnTrack, after position update and before obstacle collision: if (blink && !ball.jumping && !ball.falling) set ball.jumping=true, ball.vy=JUMP_IMPULSE",
             "Verify jump only initiates when ball is on track (not already jumping or falling)"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t6",
@@ -70,7 +70,7 @@
             "When ball.y <= groundY during jump: clamp ball.y = groundY, ball.vy = 0, ball.jumping = false",
             "Verify the ball follows a smooth parabolic arc and lands cleanly"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t7",
@@ -82,7 +82,7 @@
             "Verify ball passes over red obstacles when jumping",
             "Verify ball can still collect coins when on ground"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t8",
@@ -92,7 +92,7 @@
             "Verify track edge boundary check (Math.abs(ball.x) > halfWidth) is NOT wrapped in a !jumping guard",
             "Verify ball can fall off edge during a jump if steered laterally past boundary"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t9",
@@ -103,7 +103,7 @@
             "Change updatePhysics call to: updatePhysics(dt, tiltAngle, pitch, blink)",
             "Verify the game loop compiles and runs without errors"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t10",
@@ -113,7 +113,7 @@
             "Add jumping: false to updateFalling return object",
             "Verify main.js game loop receives result.jumping field"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t11",
@@ -122,7 +122,7 @@
             "Run: docker build -t teeter .",
             "Verify build completes successfully with exit code 0"
           ],
-          "passes": false
+          "passes": true
         }
       ],
       "quality_checklist": [
@@ -134,7 +134,7 @@
             "Verify left eye indices: 362 (outer), 386 (upper), 385 (upper2), 263 (inner), 374 (lower), 380 (lower2)",
             "Verify EAR formula computes (vert1 + vert2) / (2 * horiz) correctly"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q2",
@@ -144,7 +144,7 @@
             "Verify detectTilt() stores landmarks in a module-level variable",
             "Verify detectBlink() reads from that variable"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q3",
@@ -154,7 +154,7 @@
             "Check that OBSTACLE_HEIGHT is 1.0 (from renderer.js) and ballRadius is 0.3",
             "Confirm peak of ~1.76 units clears the required ~1.4 units"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q4",
@@ -165,7 +165,7 @@
             "Verify no unnecessary comments, no over-engineering, no extra imports",
             "Verify export style matches existing pattern (named exports)"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q5",
@@ -175,7 +175,7 @@
             "Verify blink detection state (lastEAR, lastBlinkTime) is reset in resetTilt()",
             "Verify currentLandmarks is handled gracefully when null"
           ],
-          "passes": false
+          "passes": true
         }
       ]
     }
@@ -197,7 +197,7 @@
           "Verify face tracking loads and ball responds to head tilt",
           "Verify score display is visible"
         ],
-        "passes": false
+        "passes": true
       },
       {
         "id": "v2",
@@ -207,7 +207,7 @@
           "Observe the red ball launching upward in a smooth arc",
           "Observe the ball landing back on the track surface"
         ],
-        "passes": false
+        "passes": true
       },
       {
         "id": "v3",
@@ -217,7 +217,7 @@
           "Blink to trigger a jump before reaching it",
           "Verify the ball arcs over the obstacle without game over"
         ],
-        "passes": false
+        "passes": true
       },
       {
         "id": "v4",
@@ -227,7 +227,7 @@
           "Verify only one jump occurs per ~500ms cooldown period",
           "Verify no double-jump or mid-air re-jump"
         ],
-        "passes": false
+        "passes": true
       },
       {
         "id": "v5",
@@ -237,7 +237,7 @@
           "While airborne, tilt head to steer ball toward track edge",
           "Verify the ball falls off the edge and triggers game over"
         ],
-        "passes": false
+        "passes": true
       },
       {
         "id": "v6",
@@ -248,7 +248,7 @@
           "Verify turtle powerup collection still causes slowdown",
           "Verify track wrapping still regenerates the level"
         ],
-        "passes": false
+        "passes": true
       }
     ]
   }
