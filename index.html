@@ -280,6 +280,22 @@
     #boost-indicator.visible {
       display: block;
     }
+    #speed {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 1.2em;
+      font-weight: 700;
+      z-index: 10;
+      pointer-events: none;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      background: rgba(0,0,0,0.3);
+      padding: 6px 14px;
+      border-radius: 8px;
+      display: none;
+    }
     #version-info {
       position: fixed;
       bottom: 8px;
@@ -304,6 +320,7 @@
 <body>
   <div id="score">Score: 0</div>
   <div id="level">Level 1</div>
+  <div id="speed">0.0 m/s</div>
   <button id="leaderboard-btn">Leaderboard</button>
   <div id="overlay">
     <div class="title">TEETER</div>
