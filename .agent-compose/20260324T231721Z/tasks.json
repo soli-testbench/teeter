@@ -1,0 +1,92 @@
+{
+  "quality": "skip",
+  "tasks": [
+    {
+      "id": "main",
+      "title": "Verify shared global leaderboard implementation",
+      "description": "The shared global leaderboard feature is already fully implemented. This task verifies all acceptance criteria are met, runs the test suite, and confirms no regressions. If any issues are discovered during verification, fix them.",
+      "acceptance_criteria": "1. All 43 existing tests pass.\n2. Score submission flow works end-to-end (challenge → POST → GET).\n3. localStorage fallback works when API is unreachable.\n4. Server-side validation rejects invalid input.\n5. Docker/nginx configuration proxies /api/ correctly.\n6. No regressions in any acceptance criterion.",
+      "claudeMd": "# Project Context\n\nYou are verifying an already-implemented shared global leaderboard for a browser ball game called Teeter.\n\n## CRITICAL: The feature is already complete\n\nAll 7 acceptance criteria from the task description are already fully implemented in the codebase. Your job is to:\n1. Run the test suite: `node api/server.test.js`\n2. Verify all 43 tests pass\n3. Review the code to confirm each acceptance criterion is met\n4. If any minor issues are found, fix them\n5. Commit only if you made changes\n\n## Architecture\n\n- **Backend**: `api/server.js` — Node.js HTTP server using only stdlib (no npm deps). Listens on 127.0.0.1:3001. Stores scores in `/data/scores.json`.\n- **Frontend**: `js/main.js` — ES module. Calls `/api/scores` and `/api/challenge` endpoints. Falls back to localStorage on network error.\n- **Proxy**: `nginx.conf` — proxies `/api/` to port 3001. Serves static files from `/usr/share/nginx/html/`.\n- **Docker**: `Dockerfile` uses nginx:1.27.5-alpine3.21 + Node.js 22. `start.sh` supervises the Node API with bounded restart logic.\n- **Tests**: `api/server.test.js` — 43 integration tests using Node.js assert + child_process. Run with `node api/server.test.js`.\n\n## Conventions\n\n- No npm dependencies — pure Node.js stdlib\n- CommonJS in server code, ES modules in frontend\n- Conventional Commits for git messages\n- No TypeScript — vanilla JS with JSDoc where needed\n- Tests use patched server instances on different ports\n\n## What NOT to do\n\n- Do NOT introduce new dependencies\n- Do NOT refactor working code\n- Do NOT add features beyond what's in the acceptance criteria\n- Do NOT modify .github/workflows/",
+      "checklist": [
+        {
+          "id": "t1",
+          "description": "All 43 existing integration tests pass",
+          "steps": ["Run `node api/server.test.js`", "Verify output shows '43 tests, 43 passed, 0 failed'", "If any test fails, investigate and fix the root cause"],
+          "passes": false
+        },
+        {
+          "id": "t2",
+          "description": "Backend API persists scores to shared data store",
+          "steps": ["Read api/server.js", "Verify POST /api/scores writes to /data/scores.json", "Verify GET /api/scores reads from the same file", "Confirm atomic write pattern (temp file + rename)"],
+          "passes": false
+        },
+        {
+          "id": "t3",
+          "description": "Frontend displays global leaderboard from API",
+          "steps": ["Read js/main.js", "Verify loadScoresAsync() fetches from /api/scores", "Verify renderLeaderboard() displays the fetched scores in a table"],
+          "passes": false
+        },
+        {
+          "id": "t4",
+          "description": "Name entry flow is preserved",
+          "steps": ["Read index.html and verify name-entry form exists", "Read js/main.js and verify submitScore() sends name with score", "Verify nameInput has maxlength=15 matching server validation"],
+          "passes": false
+        },
+        {
+          "id": "t5",
+          "description": "localStorage fallback works when backend unreachable",
+          "steps": ["Read js/main.js loadScoresAsync() and addScoreAsync()", "Verify catch blocks fall back to localStorage on network error", "Verify server rejection (4xx) does NOT fall back to localStorage (integrity preserved)"],
+          "passes": false
+        },
+        {
+          "id": "t6",
+          "description": "Server-side validation prevents trivial abuse",
+          "steps": ["Read api/server.js POST handler", "Verify score must be positive integer 1-999999", "Verify name must be non-empty string, max 15 chars", "Verify challenge token required, rate limiting active"],
+          "passes": false
+        },
+        {
+          "id": "t7",
+          "description": "Docker/nginx configuration supports the backend",
+          "steps": ["Read nginx.conf and verify /api/ proxy_pass to 127.0.0.1:3001", "Read Dockerfile and verify Node.js installed, server.js copied", "Read start.sh and verify API supervisor with bounded restarts"],
+          "passes": false
+        }
+      ],
+      "quality_checklist": [
+        {
+          "id": "q1",
+          "description": "No unused code or dead imports in modified files",
+          "steps": ["Check for any commented-out code blocks", "Verify no unused variables or imports"],
+          "passes": false
+        }
+      ]
+    }
+  ],
+  "integration": null,
+  "verification": {
+    "buildCommand": "node api/server.test.js",
+    "runCommand": "node api/server.js",
+    "readySignal": "listening on",
+    "appType": "web",
+    "port": 3001,
+    "checks": [
+      {
+        "id": "v1",
+        "description": "API health endpoint responds",
+        "steps": ["Start the server with `node api/server.js`", "GET http://127.0.0.1:3001/api/health", "Verify response is {\"status\":\"ok\"} with HTTP 200"],
+        "passes": false
+      },
+      {
+        "id": "v2",
+        "description": "Full score submission and retrieval flow works",
+        "steps": ["GET /api/challenge to obtain a token", "POST /api/scores with {name, score} and X-Challenge-Token header", "Verify HTTP 201 with scores array", "GET /api/scores and verify the submitted score appears"],
+        "passes": false
+      },
+      {
+        "id": "v3",
+        "description": "Server-side validation rejects invalid input",
+        "steps": ["POST /api/scores with score=0 — expect 400", "POST /api/scores with empty name — expect 400", "POST /api/scores without challenge token — expect 403"],
+        "passes": false
+      }
+    ]
+  }
+}
