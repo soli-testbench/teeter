@@ -515,6 +515,12 @@ export function getTrackConfig() {
   };
 }
 
+export function updateSceneColors(hexColor) {
+  const color = new THREE.Color(hexColor);
+  scene.background = color;
+  scene.fog.color = color;
+}
+
 export function updateCoinRotation(dt) {
   for (const [, chunk] of chunks) {
     for (const entry of chunk.coinEntries) {

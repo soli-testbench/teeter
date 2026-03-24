@@ -14,6 +14,7 @@ import {
   hideCoinById,
   hideTurtleById,
   updateCoinRotation,
+  updateSceneColors,
 } from './renderer.js';
 
 import { initTracker, calibrate, detectTilt, detectPitch, detectMouthOpen, resetTilt } from './tracker.js';
@@ -34,10 +35,26 @@ const leaderboardList = document.getElementById('leaderboard-list');
 const leaderboardClose = document.getElementById('leaderboard-close');
 const slowdownIndicator = document.getElementById('slowdown-indicator');
 const boostIndicator = document.getElementById('boost-indicator');
+const levelEl = document.getElementById('level');
 
 const STORAGE_KEY = 'teeter_highscores';
 const MAX_SCORES = 10;
 const NON_QUALIFYING_DELAY = 2000;
+const CHUNK_LENGTH = 20;
+
+// Deterministic background color palette per level
+const LEVEL_COLORS = [
+  0x87CEEB, // Level 1: sky blue (default)
+  0xFFB347, // Level 2: warm orange
+  0x77DD77, // Level 3: pastel green
+  0xCB99C9, // Level 4: pastel purple
+  0xFF6961, // Level 5: pastel red
+  0xAEC6CF, // Level 6: pastel blue-gray
+  0xFDFD96, // Level 7: pastel yellow
+  0xB39EB5, // Level 8: pastel violet
+  0x87CEFA, // Level 9: light sky blue
+  0xFFDAB9, // Level 10: peach puff
+];
 
 let state = 'loading'; // loading | permission | playing | falling | gameover
 let lastTime = 0;
@@ -45,10 +62,27 @@ let resetTimer = null;
 let score = 0;
 let finalScore = 0;
 let currentBallZ = -20; // Track ball Z for rolling chunk updates
+let currentLevel = 1;
 
 function updateScore(value) {
   score = value;
   scoreEl.textContent = 'Score: ' + score;
+}
+
+function updateLevel(ballZ, ballStartZ) {
+  const newLevel = Math.max(1, Math.floor((ballZ - ballStartZ) / CHUNK_LENGTH) + 1);
+  if (newLevel !== currentLevel) {
+    currentLevel = newLevel;
+    levelEl.textContent = 'Level ' + currentLevel;
+    const colorIndex = (currentLevel - 1) % LEVEL_COLORS.length;
+    updateSceneColors(LEVEL_COLORS[colorIndex]);
+  }
+}
+
+function resetLevel() {
+  currentLevel = 1;
+  levelEl.textContent = 'Level 1';
+  updateSceneColors(LEVEL_COLORS[0]);
 }
 
 // --- localStorage leaderboard ---
@@ -149,6 +183,7 @@ function enterGameOver() {
     }, NON_QUALIFYING_DELAY);
   }
 
+  levelEl.style.display = 'none';
   gameoverOverlay.classList.add('visible');
 }
 
@@ -178,7 +213,9 @@ function exitGameOver() {
   resetTilt();
   calibrate(performance.now());
   resetBallRotation();
+  resetLevel();
   updateScore(0);
+  levelEl.style.display = 'block';
   updateBallPosition(0, config.trackHeight / 2 + config.ballRadius, config.ballStartZ);
   updateCamera(config.ballStartZ);
   state = 'playing';
@@ -245,10 +282,11 @@ async function init() {
     // Calibrate neutral head position
     calibrate(performance.now());
 
-    // Hide overlay, show score and leaderboard button, and start game
-    overlay.classList.add('hidden');
-    scoreEl.style.display = 'block';
-    leaderboardBtn.style.display = 'block';
+      // Hide overlay, show score, level, and leaderboard button, and start game
+      overlay.classList.add('hidden');
+      scoreEl.style.display = 'block';
+      levelEl.style.display = 'block';
+      leaderboardBtn.style.display = 'block';
     updateScore(0);
     state = 'playing';
     lastTime = performance.now();
@@ -287,6 +325,12 @@ function gameLoop(timestamp) {
     // Update physics
     const result = updatePhysics(dt, tiltAngle, pitch, mouthOpen);
     currentBallZ = result.z;
+
+    // Update level based on ball position
+    if (state === 'playing') {
+      const config = getTrackConfig();
+      updateLevel(result.z, config.ballStartZ);
+    }
 
     // Update renderer
     updateBallPosition(result.x, result.y, result.z);
