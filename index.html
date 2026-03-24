@@ -244,6 +244,26 @@
     #slowdown-indicator.visible {
       display: block;
     }
+    #boost-indicator {
+      position: fixed;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 1.2em;
+      font-weight: 700;
+      z-index: 10;
+      pointer-events: none;
+      background: rgba(220, 120, 0, 0.7);
+      padding: 8px 24px;
+      border-radius: 10px;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+      display: none;
+    }
+    #boost-indicator.visible {
+      display: block;
+    }
     #version-info {
       position: fixed;
       bottom: 8px;
@@ -293,6 +313,7 @@
     </div>
   </div>
   <div id="slowdown-indicator">SLOWED</div>
+  <div id="boost-indicator">BOOST</div>
   <div id="version-info" data-updated="2026-03-20T12:00:00Z">v1.0.0</div>
   <script>
     (function() {

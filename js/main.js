@@ -16,7 +16,7 @@ import {
   updateCoinRotation,
 } from './renderer.js';
 
-import { initTracker, calibrate, detectTilt, detectPitch, resetTilt } from './tracker.js';
+import { initTracker, calibrate, detectTilt, detectPitch, detectMouthOpen, resetTilt } from './tracker.js';
 import { initPhysics, updatePhysics, resetBall, updateLevelData } from './physics.js';
 
 const overlay = document.getElementById('overlay');
@@ -33,6 +33,7 @@ const leaderboardPanel = document.getElementById('leaderboard-panel');
 const leaderboardList = document.getElementById('leaderboard-list');
 const leaderboardClose = document.getElementById('leaderboard-close');
 const slowdownIndicator = document.getElementById('slowdown-indicator');
+const boostIndicator = document.getElementById('boost-indicator');
 
 const STORAGE_KEY = 'teeter_highscores';
 const MAX_SCORES = 10;
@@ -173,6 +174,7 @@ function exitGameOver() {
   initPhysics(config);
   currentBallZ = config.ballStartZ;
   slowdownIndicator.classList.remove('visible');
+  boostIndicator.classList.remove('visible');
   resetTilt();
   calibrate(performance.now());
   resetBallRotation();
@@ -271,9 +273,10 @@ function gameLoop(timestamp) {
   lastTime = timestamp;
 
   if (state === 'playing' || state === 'falling') {
-    // Get head tilt and pitch
+    // Get head tilt, pitch, and mouth-open state
     const tiltAngle = detectTilt(timestamp);
     const pitch = detectPitch();
+    const mouthOpen = detectMouthOpen();
 
     // Update rolling track chunks based on current ball position
     updateRollingTrack(currentBallZ);
@@ -282,7 +285,7 @@ function gameLoop(timestamp) {
     updateLevelData(getActiveObstacles(), getActiveCoins(), getActiveTurtles());
 
     // Update physics
-    const result = updatePhysics(dt, tiltAngle, pitch);
+    const result = updatePhysics(dt, tiltAngle, pitch, mouthOpen);
     currentBallZ = result.z;
 
     // Update renderer
@@ -311,6 +314,13 @@ function gameLoop(timestamp) {
       slowdownIndicator.classList.add('visible');
     } else {
       slowdownIndicator.classList.remove('visible');
+    }
+
+    // Show/hide boost indicator
+    if (result.boostActive) {
+      boostIndicator.classList.add('visible');
+    } else {
+      boostIndicator.classList.remove('visible');
     }
 
     // Handle state transitions

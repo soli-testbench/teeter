@@ -4,6 +4,7 @@ const RESPONSE_RATE = 6.0;
 const FORWARD_SPEED = 3.2;
 const PITCH_SENSITIVITY = 3.0;
 const MAX_SPEED = 8.5;
+const MOUTH_BOOST_MULTIPLIER = 1.8; // Speed multiplier when mouth is open
 const MAX_DT = 1 / 30; // Cap delta time to prevent physics explosions
 const COIN_COLLECT_RADIUS = 0.8;
 const TURTLE_COLLECT_RADIUS = 0.8;
@@ -53,17 +54,17 @@ export function updateLevelData(newObstacles, newCoins, newTurtles) {
   turtles = newTurtles;
 }
 
-export function updatePhysics(dt, tiltAngle, pitch) {
+export function updatePhysics(dt, tiltAngle, pitch, mouthOpen) {
   dt = Math.min(dt, MAX_DT);
 
   if (ball.falling) {
     return updateFalling(dt);
   }
 
-  return updateOnTrack(dt, tiltAngle, pitch);
+  return updateOnTrack(dt, tiltAngle, pitch, mouthOpen);
 }
 
-function updateOnTrack(dt, tiltAngle, pitch) {
+function updateOnTrack(dt, tiltAngle, pitch, mouthOpen) {
   // Decrement slowdown timer
   if (slowdownActive) {
     slowdownTimer -= dt;
@@ -73,9 +74,16 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     }
   }
 
-  // Effective speeds (halved when slowed)
-  const effectiveForward = slowdownActive ? FORWARD_SPEED / 2 : FORWARD_SPEED;
-  const effectiveMax = slowdownActive ? MAX_SPEED / 2 : MAX_SPEED;
+  // Effective speeds (halved when slowed, boosted when mouth open)
+  let effectiveForward = slowdownActive ? FORWARD_SPEED / 2 : FORWARD_SPEED;
+  let effectiveMax = slowdownActive ? MAX_SPEED / 2 : MAX_SPEED;
+
+  // Mouth-open boost (stacks multiplicatively with slowdown)
+  const boostActive = !!mouthOpen && !ball.falling;
+  if (boostActive) {
+    effectiveForward *= MOUTH_BOOST_MULTIPLIER;
+    effectiveMax *= MOUTH_BOOST_MULTIPLIER;
+  }
 
   // Direct lateral velocity from head tilt with smooth interpolation
   const targetVx = -tiltAngle * DIRECT_SENSITIVITY;
@@ -157,6 +165,7 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     coinsCollected: newlyCollected,
     turtleCollected: turtleJustCollected,
     slowdownActive,
+    boostActive,
   };
 }
 
@@ -182,6 +191,7 @@ function updateFalling(dt) {
     coinsCollected: [],
     turtleCollected: null,
     slowdownActive,
+    boostActive: false,
   };
 }
 
