@@ -1,9 +1,9 @@
 const GRAVITY = 9.8;
 const DIRECT_SENSITIVITY = 15.0;
 const RESPONSE_RATE = 6.0;
-const FORWARD_SPEED = 3.2;
+const FORWARD_SPEED = 4.5;
 const PITCH_SENSITIVITY = 3.0;
-const MAX_SPEED = 8.5;
+const MAX_SPEED = 11.0;
 const MOUTH_BOOST_MULTIPLIER = 1.8; // Speed multiplier when mouth is open
 const MAX_DT = 1 / 30; // Cap delta time to prevent physics explosions
 const COIN_COLLECT_RADIUS = 0.8;
