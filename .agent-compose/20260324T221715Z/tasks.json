@@ -15,7 +15,7 @@
             "Add <div id=\"speed\">0.0 m/s</div> after the #score div in index.html body",
             "Verify the element is present in the HTML"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t2",
@@ -26,7 +26,7 @@
             "Set font-size to 1.2em, font-weight 700, z-index 10, pointer-events none",
             "Set display:none as default (hidden until gameplay starts)"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t3",
@@ -37,7 +37,7 @@
             "In enterGameOver(), add speedEl.style.display = 'none'",
             "In exitGameOver(), add speedEl.style.display = 'block'"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t4",
@@ -47,7 +47,7 @@
             "Update speedEl.textContent = speed.toFixed(1) + ' m/s'",
             "Verify speed updates continuously during playing and falling states"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t5",
@@ -57,7 +57,7 @@
             "Verify enterGameOver() hides #speed",
             "Verify exitGameOver() re-shows #speed"
           ],
-          "passes": false
+          "passes": true
         }
       ],
       "quality_checklist": [
@@ -69,7 +69,7 @@
             "Verify same font-family, color, text-shadow, background, padding, border-radius values",
             "Verify position/size differences are intentional (bottom-left vs top-left, slightly smaller font)"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q2",
@@ -79,7 +79,7 @@
             "Verify no new functions or abstractions were created beyond what's needed",
             "Verify no changes to physics.js, renderer.js, or tracker.js"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q3",
@@ -89,7 +89,7 @@
             "Verify .toFixed(1) is used for 1 decimal place",
             "Verify unit label 'm/s' is included in the display text"
           ],
-          "passes": false
+          "passes": true
         }
       ]
     }
