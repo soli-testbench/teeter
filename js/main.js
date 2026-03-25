@@ -18,7 +18,7 @@ import {
 } from './renderer.js';
 
 import { initTracker, calibrate, detectTilt, detectPitch, detectMouthOpen, resetTilt } from './tracker.js';
-import { initPhysics, updatePhysics, resetBall, updateLevelData } from './physics.js';
+import { initPhysics, updatePhysics, resetBall, updateLevelData, setSensitivity, DEFAULT_SENSITIVITY } from './physics.js';
 import { getPointAtDistance } from './track.js';
 
 const overlay = document.getElementById('overlay');
@@ -39,6 +39,13 @@ const slowdownIndicator = document.getElementById('slowdown-indicator');
 const boostIndicator = document.getElementById('boost-indicator');
 const levelEl = document.getElementById('level');
 const timerEl = document.getElementById('timer');
+const settingsBtn = document.getElementById('settings-btn');
+const settingsPanel = document.getElementById('settings-panel');
+const settingsClose = document.getElementById('settings-close');
+const sensitivitySlider = document.getElementById('sensitivity-slider');
+const sensitivityValue = document.getElementById('sensitivity-value');
+const sensitivityLabel = document.getElementById('sensitivity-label');
+const sensitivityReset = document.getElementById('sensitivity-reset');
 
 const STORAGE_KEY = 'teeter_highscores';
 const MAX_SCORES = 10;
@@ -121,6 +128,53 @@ function addScore(name, value) {
   return trimmed;
 }
 
+// --- Sensitivity settings ---
+
+const SENSITIVITY_KEY = 'teeter_sensitivity';
+const SENSITIVITY_MIN = 5;
+const SENSITIVITY_MAX = 30;
+
+function loadSensitivity() {
+  try {
+    const raw = localStorage.getItem(SENSITIVITY_KEY);
+    if (raw === null) return DEFAULT_SENSITIVITY;
+    const val = parseFloat(raw);
+    if (isNaN(val)) return DEFAULT_SENSITIVITY;
+    return Math.max(SENSITIVITY_MIN, Math.min(SENSITIVITY_MAX, val));
+  } catch {
+    return DEFAULT_SENSITIVITY;
+  }
+}
+
+function saveSensitivity(value) {
+  try {
+    localStorage.setItem(SENSITIVITY_KEY, String(value));
+  } catch {
+    // storage unavailable — silently fail
+  }
+}
+
+function getSensitivityLabel(value) {
+  if (value <= 10) return 'Low';
+  if (value <= 18) return 'Medium';
+  return 'High';
+}
+
+function updateSensitivityDisplay() {
+  const val = parseFloat(sensitivitySlider.value);
+  sensitivityValue.textContent = val.toFixed(1);
+  sensitivityLabel.textContent = getSensitivityLabel(val);
+}
+
+function showSettings() {
+  settingsPanel.classList.add('visible');
+}
+
+function hideSettings() {
+  settingsPanel.classList.remove('visible');
+}
+
+
 function renderLeaderboard() {
   const scores = loadScores();
   if (scores.length === 0) {
@@ -169,6 +223,7 @@ function enterFinished(timestamp) {
 // --- Game over flow ---
 
 function enterGameOver() {
+  hideSettings();
   finalScore = score;
   state = 'gameover';
 
@@ -236,6 +291,40 @@ leaderboardBtn.addEventListener('click', () => { showLeaderboard(); });
 leaderboardClose.addEventListener('click', () => { hideLeaderboard(); });
 leaderboardPanel.addEventListener('click', (e) => { if (e.target === leaderboardPanel) hideLeaderboard(); });
 
+// --- Settings event listeners ---
+
+settingsBtn.addEventListener('click', () => {
+  if (settingsPanel.classList.contains('visible')) {
+    hideSettings();
+  } else {
+    showSettings();
+  }
+});
+
+settingsClose.addEventListener('click', () => {
+  hideSettings();
+});
+
+settingsPanel.addEventListener('click', (e) => {
+  if (e.target === settingsPanel) {
+    hideSettings();
+  }
+});
+
+sensitivitySlider.addEventListener('input', () => {
+  const val = parseFloat(sensitivitySlider.value);
+  setSensitivity(val);
+  saveSensitivity(val);
+  updateSensitivityDisplay();
+});
+
+sensitivityReset.addEventListener('click', () => {
+  sensitivitySlider.value = DEFAULT_SENSITIVITY;
+  setSensitivity(DEFAULT_SENSITIVITY);
+  saveSensitivity(DEFAULT_SENSITIVITY);
+  updateSensitivityDisplay();
+});
+
 // --- Init & game loop ---
 
 async function init() {
@@ -267,6 +356,14 @@ async function init() {
     levelEl.style.display = 'block';
     timerEl.style.display = 'block';
     leaderboardBtn.style.display = 'block';
+    settingsBtn.style.display = 'block';
+
+    // Load persisted sensitivity
+    const savedSensitivity = loadSensitivity();
+    setSensitivity(savedSensitivity);
+    sensitivitySlider.value = savedSensitivity;
+    updateSensitivityDisplay();
+
     updateScore(0);
     gameStartTime = performance.now();
     state = 'playing';
