@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
 const Database = require('better-sqlite3');
 const rateLimit = require('express-rate-limit');
 
@@ -13,11 +14,13 @@ const MAX_SCORES = 10;
 const MAX_REASONABLE_SCORE = 10000;
 const MAX_NAME_LENGTH = 15;
 
-// Security: Content-Security-Policy and other headers
+// Generate a per-request nonce and attach security headers
 app.use((req, res, next) => {
+  const nonce = crypto.randomBytes(16).toString('base64');
+  res.locals.cspNonce = nonce;
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
+    "script-src 'self' 'nonce-" + nonce + "' https://cdn.jsdelivr.net; " +
     "style-src 'self' 'unsafe-inline'; " +
     "connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com; " +
     "worker-src 'self' blob:; " +
@@ -77,14 +80,24 @@ const scoreSubmitLimiter = rateLimit({
   message: { error: 'Too many score submissions. Please try again later.' },
 });
 
-// Serve static files (no CORS headers — API is same-origin only)
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve static files, but skip index.html so it can be served dynamically
+// with a per-request CSP nonce injected into the inline script tag.
+app.use(express.static(path.join(__dirname, 'public'), {
+  index: false
+}));
 
-// Reject cross-origin API requests
+// Reject cross-origin API requests using strict origin equality
 app.use('/api', (req, res, next) => {
   const origin = req.get('Origin');
-  // Allow same-origin requests (Origin header absent) and requests from our own host
-  if (origin && !origin.includes(req.get('Host'))) {
+  if (!origin) {
+    // No Origin header means same-origin (non-CORS) request
+    return next();
+  }
+  // Build the expected origin from the Host header
+  const proto = req.protocol; // 'http' or 'https'
+  const host = req.get('Host');
+  const expectedOrigin = proto + '://' + host;
+  if (origin !== expectedOrigin) {
     return res.status(403).json({ error: 'Cross-origin requests are not allowed.' });
   }
   next();
@@ -164,9 +177,22 @@ app.get('/api/scores/qualifies', (req, res) => {
   }
 });
 
-// Fallback to index.html for SPA
-app.get('/{*splat}', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// Serve index.html with CSP nonce injected into the inline script tag
+const indexHtmlPath = path.join(__dirname, 'public', 'index.html');
+const indexHtmlTemplate = fs.readFileSync(indexHtmlPath, 'utf8');
+
+function serveIndex(req, res) {
+  const nonce = res.locals.cspNonce;
+  const html = indexHtmlTemplate.replace('<script>', '<script nonce="' + nonce + '">');
+  res.type('html').send(html);
+}
+
+// Serve index.html at root and as SPA fallback
+app.get('/', serveIndex);
+app.get('/{*splat}', (req, res, next) => {
+  // Only serve index.html for non-file paths (SPA fallback)
+  if (req.path.includes('.')) return next();
+  serveIndex(req, res);
 });
 
 // Graceful shutdown
