@@ -3,3 +3,5 @@
 *.md
 tasks.json
 .dockerignore
+node_modules
+data

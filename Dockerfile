@@ -1,8 +1,14 @@
-FROM nginx:alpine
-RUN rm -rf /usr/share/nginx/html/*
-COPY nginx.conf /etc/nginx/nginx.conf
-COPY index.html /usr/share/nginx/html/
-COPY js/ /usr/share/nginx/html/js/
-RUN nginx -t
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --production
+
+COPY server.js ./
+COPY public/ ./public/
+
+RUN mkdir -p /app/data
+
 EXPOSE 8080
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["node", "server.js"]

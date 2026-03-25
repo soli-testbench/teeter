@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teeter</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; }
+    canvas { display: block; }
+    #overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      text-align: center;
+      font-size: 1.4em;
+      line-height: 1.6;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #overlay .title {
+      font-size: 2em;
+      font-weight: 700;
+      margin-bottom: 0.3em;
+      letter-spacing: 0.05em;
+    }
+    #overlay .subtitle {
+      font-size: 0.8em;
+      opacity: 0.7;
+      white-space: pre-line;
+    }
+    #overlay.error {
+      color: #ff6b6b;
+    }
+    #overlay.hidden {
+      display: none;
+    }
+    #score {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 1.6em;
+      font-weight: 700;
+      z-index: 10;
+      pointer-events: none;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      background: rgba(0,0,0,0.3);
+      padding: 6px 14px;
+      border-radius: 8px;
+      display: none;
+    }
+    #level {
+      position: fixed;
+      top: 16px;
+      left: 180px;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 1.6em;
+      font-weight: 700;
+      z-index: 10;
+      pointer-events: none;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      background: rgba(0,0,0,0.3);
+      padding: 6px 14px;
+      border-radius: 8px;
+      display: none;
+    }
+    #timer {
+      position: fixed;
+      top: 16px;
+      left: 340px;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 1.6em;
+      font-weight: 700;
+      z-index: 10;
+      pointer-events: none;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      background: rgba(0,0,0,0.3);
+      padding: 6px 14px;
+      border-radius: 8px;
+      display: none;
+    }
+    #leaderboard-btn {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 1em;
+      font-weight: 600;
+      z-index: 10;
+      background: rgba(0,0,0,0.4);
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.2);
+      cursor: pointer;
+      display: none;
+    }
+    #leaderboard-btn:hover {
+      background: rgba(0,0,0,0.6);
+    }
+    #gameover-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      background: rgba(0,0,0,0.6);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #fff;
+    }
+    #gameover-overlay.visible {
+      display: flex;
+    }
+    #gameover-box {
+      text-align: center;
+      background: rgba(0,0,0,0.75);
+      padding: 40px 48px;
+      border-radius: 16px;
+      min-width: 320px;
+    }
+    #gameover-box .go-title {
+      font-size: 2.4em;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    #gameover-box .go-score {
+      font-size: 1.4em;
+      opacity: 0.8;
+      margin-bottom: 24px;
+    }
+    #gameover-box .go-message {
+      font-size: 1em;
+      opacity: 0.7;
+      margin-bottom: 16px;
+    }
+    #name-entry {
+      display: none;
+    }
+    #name-entry.visible {
+      display: block;
+    }
+    #name-entry label {
+      display: block;
+      font-size: 1em;
+      margin-bottom: 8px;
+      opacity: 0.8;
+    }
+    #name-input {
+      font-size: 1.2em;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      outline: none;
+      width: 200px;
+      text-align: center;
+      font-family: inherit;
+    }
+    #name-input:focus {
+      border-color: rgba(255,255,255,0.6);
+    }
+    #name-submit {
+      display: inline-block;
+      margin-top: 12px;
+      font-size: 1em;
+      padding: 8px 24px;
+      border-radius: 8px;
+      border: none;
+      background: #4a90d9;
+      color: #fff;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 600;
+    }
+    #name-submit:hover {
+      background: #5aa0e9;
+    }
+    #leaderboard-panel {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 25;
+      background: rgba(0,0,0,0.7);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #fff;
+    }
+    #leaderboard-panel.visible {
+      display: flex;
+    }
+    #leaderboard-box {
+      text-align: center;
+      background: rgba(0,0,0,0.8);
+      padding: 32px 40px;
+      border-radius: 16px;
+      min-width: 340px;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    #leaderboard-box .lb-title {
+      font-size: 1.8em;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      margin-bottom: 20px;
+    }
+    #leaderboard-box table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    #leaderboard-box th {
+      font-size: 0.85em;
+      opacity: 0.6;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 6px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.15);
+    }
+    #leaderboard-box td {
+      padding: 8px 12px;
+      font-size: 1.05em;
+    }
+    #leaderboard-box tr:nth-child(even) td {
+      background: rgba(255,255,255,0.04);
+    }
+    .lb-rank { width: 40px; }
+    .lb-name { text-align: left; }
+    .lb-score { text-align: right; font-weight: 600; }
+    .lb-empty {
+      opacity: 0.5;
+      font-size: 0.95em;
+      margin-bottom: 20px;
+    }
+    #leaderboard-close {
+      font-size: 1em;
+      padding: 8px 24px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.3);
+      background: transparent;
+      color: #fff;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 600;
+    }
+    #leaderboard-close:hover {
+      background: rgba(255,255,255,0.1);
+    }
+    #slowdown-indicator {
+      position: fixed;
+      bottom: 50px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 1.2em;
+      font-weight: 700;
+      z-index: 10;
+      pointer-events: none;
+      background: rgba(0, 128, 80, 0.7);
+      padding: 8px 24px;
+      border-radius: 10px;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+      display: none;
+    }
+    #slowdown-indicator.visible {
+      display: block;
+    }
+    #boost-indicator {
+      position: fixed;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 1.2em;
+      font-weight: 700;
+      z-index: 10;
+      pointer-events: none;
+      background: rgba(220, 120, 0, 0.7);
+      padding: 8px 24px;
+      border-radius: 10px;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+      display: none;
+    }
+    #boost-indicator.visible {
+      display: block;
+    }
+    #version-info {
+      position: fixed;
+      bottom: 8px;
+      right: 10px;
+      color: rgba(255,255,255,0.35);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 0.7em;
+      z-index: 5;
+      pointer-events: none;
+      user-select: none;
+    }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="score">Score: 0</div>
+  <div id="level">Level 1</div>
+  <div id="timer">00:00</div>
+  <button id="leaderboard-btn">Leaderboard</button>
+  <div id="overlay">
+    <div class="title">TEETER</div>
+    <div class="subtitle">Loading...</div>
+  </div>
+  <div id="gameover-overlay">
+    <div id="gameover-box">
+      <div class="go-title">GAME OVER</div>
+      <div class="go-score"></div>
+      <div class="go-message"></div>
+      <div id="name-entry">
+        <label for="name-input">Enter your name:</label>
+        <input type="text" id="name-input" maxlength="15" placeholder="Your name" autocomplete="off">
+        <br>
+        <button id="name-submit">Submit</button>
+      </div>
+    </div>
+  </div>
+  <div id="leaderboard-panel">
+    <div id="leaderboard-box">
+      <div class="lb-title">LEADERBOARD</div>
+      <div id="leaderboard-list"></div>
+      <button id="leaderboard-close">Close</button>
+    </div>
+  </div>
+  <div id="slowdown-indicator">SLOWED</div>
+  <div id="boost-indicator">BOOST</div>
+  <div id="version-info" data-updated="2026-03-20T12:00:00Z">v1.0.0</div>
+  <script>
+    (function() {
+      var el = document.getElementById('version-info');
+      var iso = el.getAttribute('data-updated');
+      var date = new Date(iso);
+      if (!isNaN(date.getTime())) {
+        var formatted = date.toLocaleString(undefined, {
+          year: 'numeric', month: 'short', day: 'numeric',
+          hour: '2-digit', minute: '2-digit'
+        });
+        el.textContent = el.textContent + ' \u00B7 ' + formatted;
+      }
+    })();
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
