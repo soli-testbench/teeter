@@ -1,0 +1,194 @@
+{
+  "quality": "full",
+  "tasks": [
+    {
+      "id": "main",
+      "title": "Add head tilt sensitivity slider with persistence",
+      "description": "Add a settings panel with a sensitivity slider (range 5.0–30.0) that controls the head-tilt-to-ball-movement multiplier in physics.js. The slider value persists in localStorage and takes effect immediately. A gear button in the top-right opens the settings panel. A reset button restores the default value (8.0).",
+      "acceptance_criteria": "1. A gear button (⚙) is visible in the game UI that opens a settings panel.\n2. The settings panel contains a range slider (min=5, max=30, step=0.5) that controls sensitivity.\n3. Moving the slider immediately changes ball steering responsiveness without restarting.\n4. The current value is displayed as a number and a descriptive label (Low/Medium/High).\n5. A 'Reset to Default' button restores sensitivity to 8.0.\n6. The selected sensitivity persists in localStorage key 'teeter_sensitivity' and is restored on reload.\n7. The settings panel can be closed by clicking the gear button again or clicking outside the panel.",
+      "claudeMd": "# Project Context\n\nYou are adding a sensitivity settings control to Teeter, a Three.js ball-rolling game controlled by head tilt via MediaPipe face tracking.\n\n## Stack\n\n- Pure static HTML + vanilla ES modules JS (no npm, no build step)\n- Three.js v0.183.2 via CDN importmap\n- Served by nginx in Docker\n- 2-space indentation throughout all files\n- `let` for mutable module state, `const` for constants\n- camelCase for functions/variables, UPPER_SNAKE for constants\n\n## Files to Modify\n\n### 1. `js/physics.js`\n\n**Current state**: `const DIRECT_SENSITIVITY = 8.0;` on line 2. Used on line 75: `const targetVx = tiltAngle * DIRECT_SENSITIVITY;`\n\n**Changes**:\n- Add `const DEFAULT_SENSITIVITY = 8.0;` at the top\n- Change `const DIRECT_SENSITIVITY = 8.0;` to `let directSensitivity = DEFAULT_SENSITIVITY;`\n- Update line 75 to use `directSensitivity` instead of `DIRECT_SENSITIVITY`\n- Add exported functions:\n  ```js\n  export function setSensitivity(value) {\n    directSensitivity = value;\n  }\n\n  export function getSensitivity() {\n    return directSensitivity;\n  }\n  ```\n- Export `DEFAULT_SENSITIVITY` as a named constant export\n\n### 2. `index.html`\n\n**Add CSS** inside the existing `<style>` block (before `</style>`):\n- `#settings-btn`: fixed position button, top-right, below or beside `#leaderboard-btn`. Style matching `#leaderboard-btn` (same font, colors, padding, border-radius, background).\n- `#settings-panel`: fixed full-screen overlay (like `#leaderboard-panel`) with `display: none` / `display: flex` via `.visible` class.\n- `#settings-box`: centered dark box (like `#leaderboard-box`) containing the slider and controls.\n- `.sensitivity-slider`: styled range input. Use a clean appearance.\n- `.sensitivity-value`: displayed numeric value.\n- `.sensitivity-label`: Low/Medium/High text label.\n- `#sensitivity-reset`: reset button styled like `#leaderboard-close`.\n\n**Add HTML** (before `<div id=\"slowdown-indicator\">`:\n- `<button id=\"settings-btn\">⚙ Settings</button>`\n- Settings panel overlay with slider, value display, label, reset button, and close button.\n\n### 3. `js/main.js`\n\n**Import** `setSensitivity`, `getSensitivity`, `DEFAULT_SENSITIVITY` from `'./physics.js'`.\n\n**Add constants**:\n```js\nconst SENSITIVITY_KEY = 'teeter_sensitivity';\nconst SENSITIVITY_MIN = 5;\nconst SENSITIVITY_MAX = 30;\n```\n\n**Add functions**:\n- `loadSensitivity()`: Read from `localStorage`, parse as float, clamp to [5, 30], call `setSensitivity()`. If not found or invalid, use `DEFAULT_SENSITIVITY`.\n- `saveSensitivity(value)`: Write to `localStorage`.\n- `getSensitivityLabel(value)`: Return 'Low' (5–10), 'Medium' (10.5–18), 'High' (18.5–30).\n- `updateSensitivityDisplay()`: Update the value text and label text from current slider value.\n\n**Wire events**:\n- Settings button toggles the settings panel visibility.\n- Slider `input` event: call `setSensitivity(parseFloat(slider.value))`, `saveSensitivity()`, and `updateSensitivityDisplay()`.\n- Reset button: set slider to DEFAULT_SENSITIVITY, call `setSensitivity()`, `saveSensitivity()`, `updateSensitivityDisplay()`.\n- Close button and backdrop click: hide settings panel.\n- On init (in `init()` function): call `loadSensitivity()`, set slider value, call `updateSensitivityDisplay()`, show settings button.\n\n## UI Design Direction\n\nMatch the existing game's dark, semi-transparent panel aesthetic:\n- Dark backdrop overlay: `rgba(0,0,0,0.7)`\n- Panel: `rgba(0,0,0,0.8)`, `border-radius: 16px`, padding `32px 40px`\n- Font: `-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`\n- White text on dark background\n- Buttons match existing style (`#leaderboard-close` pattern)\n- Settings gear button sits to the LEFT of the leaderboard button, same row (top: 16px)\n\n## Conventions\n\n- 2-space indent in all files\n- ES module imports/exports\n- Match existing DOM query pattern: `document.getElementById()`\n- Match existing event pattern: `.addEventListener('click', () => { ... })`\n- Match existing localStorage pattern from leaderboard code\n- Match existing CSS class toggle pattern: `.classList.add('visible')` / `.classList.remove('visible')`\n\n## Gotchas\n\n- Do NOT modify `js/tracker.js` or `js/renderer.js`\n- Do NOT modify `Dockerfile` or `nginx.conf`\n- The actual current DIRECT_SENSITIVITY value in the codebase is 8.0, not 15.0 as mentioned in the task description. Use 8.0 as the default.\n- The settings panel should NOT pause the game — changes apply instantly while playing.\n- Make sure the settings button has `display: none` initially (like leaderboard button) and is shown in `init()` alongside the leaderboard button.\n- The slider `input` event (not `change`) ensures real-time updates as the user drags.\n- When loading sensitivity from localStorage, handle NaN and out-of-range values gracefully.",
+      "checklist": [
+        {
+          "id": "t1",
+          "description": "Convert DIRECT_SENSITIVITY to mutable variable with getter/setter exports in physics.js",
+          "steps": [
+            "Add `const DEFAULT_SENSITIVITY = 8.0;` at top of physics.js",
+            "Change `const DIRECT_SENSITIVITY = 8.0;` to `let directSensitivity = DEFAULT_SENSITIVITY;`",
+            "Update line 75 usage from DIRECT_SENSITIVITY to directSensitivity",
+            "Add exported `setSensitivity(value)` and `getSensitivity()` functions",
+            "Export DEFAULT_SENSITIVITY",
+            "Verify: `docker build -t teeter .` succeeds"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t2",
+          "description": "Add settings button and panel HTML/CSS to index.html",
+          "steps": [
+            "Add CSS styles for #settings-btn, #settings-panel, #settings-box, slider, value display, label, and reset button matching existing dark panel aesthetic",
+            "Add #settings-btn button element near #leaderboard-btn",
+            "Add #settings-panel overlay with #settings-box containing: title, slider input (type=range, min=5, max=30, step=0.5, id=sensitivity-slider), value display (id=sensitivity-value), label display (id=sensitivity-label), reset button (id=sensitivity-reset), close button (id=settings-close)",
+            "Verify: HTML structure renders correctly by building Docker image"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t3",
+          "description": "Wire slider events, localStorage persistence, and display updates in main.js",
+          "steps": [
+            "Import setSensitivity, getSensitivity, DEFAULT_SENSITIVITY from physics.js",
+            "Add SENSITIVITY_KEY, SENSITIVITY_MIN, SENSITIVITY_MAX constants",
+            "Implement loadSensitivity(), saveSensitivity(), getSensitivityLabel(), updateSensitivityDisplay()",
+            "Wire settings button click to toggle settings panel",
+            "Wire slider input event to update sensitivity in real-time",
+            "Wire reset button to restore DEFAULT_SENSITIVITY",
+            "Wire close button and backdrop click to hide panel",
+            "In init(), call loadSensitivity(), set slider value, show settings button",
+            "Verify: `docker build -t teeter .` succeeds"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t4",
+          "description": "localStorage persistence works correctly",
+          "steps": [
+            "Set slider to a non-default value (e.g., 20)",
+            "Verify localStorage key 'teeter_sensitivity' is written with the value",
+            "Reload the page and verify the slider initializes to the persisted value",
+            "Click reset button and verify localStorage is updated to 8.0",
+            "Verify: slider shows correct value and label after page reload"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t5",
+          "description": "Sensitivity changes take effect immediately during gameplay",
+          "steps": [
+            "Start the game and tilt head to observe ball movement",
+            "Open settings panel while game is running",
+            "Move slider to maximum (30) and observe increased ball movement",
+            "Move slider to minimum (5) and observe decreased ball movement",
+            "Verify: no game restart required, changes are instant"
+          ],
+          "passes": false
+        }
+      ],
+      "quality_checklist": [
+        {
+          "id": "q1",
+          "description": "CSS follows existing patterns - dark semi-transparent panels, consistent font stack, matching button styles",
+          "steps": [
+            "Compare settings panel CSS with leaderboard panel CSS for consistency",
+            "Check that font-family matches: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            "Verify button styles match existing #leaderboard-close and #leaderboard-btn patterns"
+          ],
+          "passes": false
+        },
+        {
+          "id": "q2",
+          "description": "No dead code or unused variables introduced",
+          "steps": [
+            "Verify old DIRECT_SENSITIVITY constant is fully removed (not left commented out)",
+            "Check no unused imports were added",
+            "Verify all new functions are actually called"
+          ],
+          "passes": false
+        },
+        {
+          "id": "q3",
+          "description": "localStorage handling is robust against invalid data",
+          "steps": [
+            "Check that loadSensitivity handles missing key (returns default)",
+            "Check that loadSensitivity handles NaN values (returns default)",
+            "Check that loadSensitivity clamps out-of-range values to [5, 30]",
+            "Check that saveSensitivity uses try/catch like existing leaderboard pattern"
+          ],
+          "passes": false
+        },
+        {
+          "id": "q4",
+          "description": "2-space indentation and ES module conventions maintained",
+          "steps": [
+            "Verify all new code uses 2-space indentation",
+            "Verify exports use named export syntax matching existing patterns",
+            "Verify imports are added to existing import blocks, not duplicated"
+          ],
+          "passes": false
+        }
+      ]
+    }
+  ],
+  "integration": null,
+  "verification": {
+    "buildCommand": "docker build -t teeter .",
+    "runCommand": "docker run -d -p 8080:8080 teeter",
+    "readySignal": "listening|ready|started|Configuration complete",
+    "appType": "web",
+    "port": 8080,
+    "checks": [
+      {
+        "id": "v1",
+        "description": "Settings gear button is visible in the game UI alongside the leaderboard button",
+        "steps": [
+          "Load page at localhost:8080",
+          "Wait for camera permission and head tracking to load",
+          "Verify a gear/settings button appears in the top-right area of the screen"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v2",
+        "description": "Settings panel opens with a sensitivity slider ranging from 5 to 30",
+        "steps": [
+          "Click the settings button",
+          "Verify a dark overlay panel appears with a slider control",
+          "Verify the slider has a visible range from 5 (Low) to 30 (High)",
+          "Verify the current value is displayed numerically"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v3",
+        "description": "Slider changes ball steering responsiveness immediately",
+        "steps": [
+          "While the game is running, open settings",
+          "Move the slider to max (30) — ball should respond more dramatically to head tilts",
+          "Move the slider to min (5) — ball should respond less to head tilts",
+          "Verify changes happen in real-time without requiring restart"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v4",
+        "description": "Reset button restores default sensitivity (8.0)",
+        "steps": [
+          "Move slider to a non-default value",
+          "Click the 'Reset to Default' button",
+          "Verify slider returns to 8.0 and the label shows the corresponding level"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v5",
+        "description": "Sensitivity value persists in localStorage across page reloads",
+        "steps": [
+          "Set sensitivity to 20 using the slider",
+          "Reload the page",
+          "Open settings panel and verify the slider is at 20"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v6",
+        "description": "Settings panel can be closed by clicking outside or the close button",
+        "steps": [
+          "Open the settings panel",
+          "Click the close button — panel should close",
+          "Open the settings panel again",
+          "Click the dark backdrop area — panel should close"
+        ],
+        "passes": false
+      }
+    ]
+  }
+}
