@@ -16,3 +16,10 @@
 - **quality_checklist**: 4 items verified (q1 ✅, q2 ✅ after fix, q3 ✅, q4 ✅)
 - **Fixes applied**: removed dead `getSensitivity()` export from physics.js, added `hideSettings()` call in `enterGameOver()` to close settings panel on game over
 - **Outcome**: success / exit_signal: true
+
+## conflict-resolver — 2026-03-25T21:05:55Z
+
+- **Conflict**: index.html (level/timer vs settings-btn), js/main.js (imports, DOM refs, sensitivity settings section — 3 hunks across initial commit + 2 follow-up commits), js/physics.js (DIRECT_SENSITIVITY const, boost vs sensitivity in updateOnTrack, exported functions — 3 hunks across 2 commits)
+- **Resolution**: Merged both sides' intent in all files — kept upstream's level/timer/boost/calibrate features alongside branch's settings/sensitivity features. Used configurable `directSensitivity` variable instead of `DIRECT_SENSITIVITY` constant. Kept `DEFAULT_SENSITIVITY = 15.0` (upstream's value). Dropped stale `refreshLevel` and already-removed `getSensitivity` exports.
+- **Tests run**: yes — JS syntax checks pass (node --check on main.js and physics.js)
+- **Outcome**: success
