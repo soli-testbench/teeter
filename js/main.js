@@ -14,6 +14,7 @@ import {
   hideTurtleById,
   updateCoinRotation,
   updateSceneColors,
+  updateMovingWalls,
 } from './renderer.js';
 
 import { initTracker, calibrate, detectTilt, detectPitch, detectMouthOpen, resetTilt } from './tracker.js';
@@ -308,6 +309,7 @@ function gameLoop(timestamp) {
     updateBallRotation(result.vx, result.vz, dt);
     updateCamera(result.distance, result.x, result.y, result.z);
     updateCoinRotation(dt);
+    updateMovingWalls(timestamp);
 
     if (result.coinsCollected && result.coinsCollected.length > 0) {
       for (const coinId of result.coinsCollected) {

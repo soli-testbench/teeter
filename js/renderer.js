@@ -24,6 +24,14 @@ const COIN_TUBE = 0.08;
 const TURTLE_SPAWN_CHANCE = 0.25;
 const TURTLE_SEGMENT_LENGTH = 60;
 
+// Moving wall constants
+const MOVING_WALL_WIDTH = 1.2;
+const MOVING_WALL_HEIGHT = 1.2;
+const MOVING_WALL_DEPTH = 0.4;
+const MOVING_WALL_START_DISTANCE = 40;
+const MOVING_WALL_MIN_SPACING = 15;
+const MOVING_WALL_MAX_SPACING = 25;
+
 let scene, camera, renderer, dirLight;
 let ballMesh;
 
@@ -32,10 +40,13 @@ let edgeMeshes = [];
 let obstacleMeshes = [];
 let coinEntries = [];
 let turtleEntries = [];
+let movingWallEntries = [];
 let finishLineMeshes = [];
 
 const obstGeo = new THREE.BoxGeometry(OBSTACLE_WIDTH, OBSTACLE_HEIGHT, OBSTACLE_DEPTH);
 const obstMat = new THREE.MeshStandardMaterial({ color: 0x8B2222, roughness: 0.5, metalness: 0.2 });
+const movingWallGeo = new THREE.BoxGeometry(MOVING_WALL_WIDTH, MOVING_WALL_HEIGHT, MOVING_WALL_DEPTH);
+const movingWallMat = new THREE.MeshStandardMaterial({ color: 0xCC44FF, roughness: 0.3, metalness: 0.5, emissive: 0x6622AA, emissiveIntensity: 0.4 });
 const coinGeo = new THREE.TorusGeometry(COIN_RADIUS, COIN_TUBE, 12, 24);
 const coinMat = new THREE.MeshStandardMaterial({ color: 0xFFD700, metalness: 0.8, roughness: 0.2, emissive: 0x554400, emissiveIntensity: 0.3 });
 const trackMat = new THREE.MeshStandardMaterial({ color: 0x8B7355, roughness: 0.7, metalness: 0.1 });
@@ -250,6 +261,56 @@ function createTurtleMesh() {
   return group;
 }
 
+function generateMovingWalls(staticObstacles) {
+  const rng = seededRandom(globalSeed + 7777);
+  const walls = [];
+  const endD = FINISH_LINE_DISTANCE - 5;
+  let d = MOVING_WALL_START_DISTANCE;
+
+  while (d < endD) {
+    const spacing = MOVING_WALL_MIN_SPACING + rng() * (MOVING_WALL_MAX_SPACING - MOVING_WALL_MIN_SPACING);
+    d += spacing;
+    if (d >= endD) break;
+
+    // Avoid placing too close to static obstacles
+    let tooClose = false;
+    for (const o of staticObstacles) {
+      if (Math.abs(d - o.distance) < 3) { tooClose = true; break; }
+    }
+    if (tooClose) continue;
+
+    const phase = rng() * Math.PI * 2;
+    const speed = 1.2 + rng() * 0.8;
+    const range = (TRACK_WIDTH / 2) - (MOVING_WALL_WIDTH / 2) - 0.3;
+
+    walls.push({
+      distance: d,
+      halfW: MOVING_WALL_WIDTH / 2,
+      halfD: MOVING_WALL_DEPTH / 2,
+      speed,
+      range,
+      phase,
+      currentLateral: 0,
+    });
+  }
+  return walls;
+}
+
+function placeMovingWalls(wallData) {
+  for (let i = 0; i < wallData.length; i++) {
+    const w = wallData[i];
+    const worldPos = trackToWorld(w.distance, 0);
+    const tangent = getTangentAtDistance(w.distance);
+    const mesh = new THREE.Mesh(movingWallGeo, movingWallMat);
+    mesh.position.set(worldPos.x, worldPos.y + TRACK_HEIGHT / 2 + MOVING_WALL_HEIGHT / 2, worldPos.z);
+    mesh.rotation.y = Math.atan2(tangent.x, tangent.z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    movingWallEntries.push({ mesh, data: { ...w, id: 'mw_' + i } });
+  }
+}
+
 function placeObstacles(obstacleData) {
   for (let i = 0; i < obstacleData.length; i++) {
     const o = obstacleData[i];
@@ -296,9 +357,11 @@ function buildFullTrack() {
   obstacleDataCache = generateObstacles();
   const coinData = generateCoins(obstacleDataCache);
   const turtleData = generateTurtles(obstacleDataCache);
+  const movingWallData = generateMovingWalls(obstacleDataCache);
   placeObstacles(obstacleDataCache);
   placeCoins(coinData);
   placeTurtles(turtleData);
+  placeMovingWalls(movingWallData);
 }
 
 function clearTrack() {
@@ -310,12 +373,14 @@ function clearTrack() {
     e.mesh.traverse((child) => { if (child.isMesh) { child.geometry.dispose(); child.material.dispose(); } });
     scene.remove(e.mesh);
   }
+  for (const e of movingWallEntries) scene.remove(e.mesh);
   for (const m of finishLineMeshes) scene.remove(m);
   trackMeshes = [];
   edgeMeshes = [];
   obstacleMeshes = [];
   coinEntries = [];
   turtleEntries = [];
+  movingWallEntries = [];
   finishLineMeshes = [];
   obstacleDataCache = [];
 }
@@ -422,7 +487,18 @@ export function resetTrack() {
 }
 
 export function getActiveObstacles() {
-  return obstacleDataCache.map((o) => ({ distance: o.distance, lateral: o.lateral, halfW: o.halfW, halfD: o.halfD, height: OBSTACLE_HEIGHT }));
+  const result = obstacleDataCache.map((o) => ({ distance: o.distance, lateral: o.lateral, halfW: o.halfW, halfD: o.halfD, height: OBSTACLE_HEIGHT }));
+  for (const entry of movingWallEntries) {
+    const w = entry.data;
+    result.push({
+      distance: w.distance,
+      lateral: w.currentLateral,
+      halfW: w.halfW,
+      halfD: w.halfD,
+      height: MOVING_WALL_HEIGHT,
+    });
+  }
+  return result;
 }
 
 export function getActiveCoins() {
@@ -454,4 +530,19 @@ export function updateSceneColors(hexColor) {
 export function updateCoinRotation(dt) {
   for (const entry of coinEntries) { if (entry.mesh.visible) entry.mesh.rotation.y += 2.0 * dt; }
   for (const entry of turtleEntries) { if (entry.mesh.visible) entry.mesh.rotation.y += 1.5 * dt; }
+}
+
+export function updateMovingWalls(timestamp) {
+  const time = timestamp / 1000;
+  for (const entry of movingWallEntries) {
+    const w = entry.data;
+    const lateral = Math.sin(time * w.speed + w.phase) * w.range;
+    w.currentLateral = lateral;
+    const worldPos = trackToWorld(w.distance, lateral);
+    entry.mesh.position.set(
+      worldPos.x,
+      worldPos.y + TRACK_HEIGHT / 2 + MOVING_WALL_HEIGHT / 2,
+      worldPos.z
+    );
+  }
 }
