@@ -19,7 +19,7 @@
             "Export DEFAULT_SENSITIVITY",
             "Verify: `docker build -t teeter .` succeeds"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t2",
@@ -30,7 +30,7 @@
             "Add #settings-panel overlay with #settings-box containing: title, slider input (type=range, min=5, max=30, step=0.5, id=sensitivity-slider), value display (id=sensitivity-value), label display (id=sensitivity-label), reset button (id=sensitivity-reset), close button (id=settings-close)",
             "Verify: HTML structure renders correctly by building Docker image"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t3",
@@ -46,7 +46,7 @@
             "In init(), call loadSensitivity(), set slider value, show settings button",
             "Verify: `docker build -t teeter .` succeeds"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t4",
@@ -58,7 +58,7 @@
             "Click reset button and verify localStorage is updated to 8.0",
             "Verify: slider shows correct value and label after page reload"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t5",
@@ -70,7 +70,7 @@
             "Move slider to minimum (5) and observe decreased ball movement",
             "Verify: no game restart required, changes are instant"
           ],
-          "passes": false
+          "passes": true
         }
       ],
       "quality_checklist": [
@@ -82,7 +82,7 @@
             "Check that font-family matches: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
             "Verify button styles match existing #leaderboard-close and #leaderboard-btn patterns"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q2",
@@ -92,7 +92,7 @@
             "Check no unused imports were added",
             "Verify all new functions are actually called"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q3",
@@ -103,7 +103,7 @@
             "Check that loadSensitivity clamps out-of-range values to [5, 30]",
             "Check that saveSensitivity uses try/catch like existing leaderboard pattern"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q4",
@@ -113,7 +113,7 @@
             "Verify exports use named export syntax matching existing patterns",
             "Verify imports are added to existing import blocks, not duplicated"
           ],
-          "passes": false
+          "passes": true
         }
       ]
     }
