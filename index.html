@@ -256,6 +256,124 @@
     #leaderboard-close:hover {
       background: rgba(255,255,255,0.1);
     }
+    #settings-btn {
+      position: fixed;
+      top: 16px;
+      right: 140px;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 1em;
+      font-weight: 600;
+      z-index: 10;
+      background: rgba(0,0,0,0.4);
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.2);
+      cursor: pointer;
+      display: none;
+    }
+    #settings-btn:hover {
+      background: rgba(0,0,0,0.6);
+    }
+    #settings-panel {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 25;
+      background: rgba(0,0,0,0.7);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #fff;
+    }
+    #settings-panel.visible {
+      display: flex;
+    }
+    #settings-box {
+      text-align: center;
+      background: rgba(0,0,0,0.8);
+      padding: 32px 40px;
+      border-radius: 16px;
+      min-width: 340px;
+    }
+    #settings-box .settings-title {
+      font-size: 1.8em;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      margin-bottom: 24px;
+    }
+    .sensitivity-row {
+      margin-bottom: 16px;
+    }
+    .sensitivity-row label {
+      display: block;
+      font-size: 0.95em;
+      opacity: 0.8;
+      margin-bottom: 12px;
+    }
+    #sensitivity-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255,255,255,0.2);
+      outline: none;
+      cursor: pointer;
+    }
+    #sensitivity-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #4a90d9;
+      cursor: pointer;
+    }
+    #sensitivity-slider::-moz-range-thumb {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #4a90d9;
+      cursor: pointer;
+      border: none;
+    }
+    .sensitivity-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-top: 8px;
+      margin-bottom: 20px;
+    }
+    #sensitivity-value {
+      font-size: 1.4em;
+      font-weight: 700;
+    }
+    #sensitivity-label {
+      font-size: 0.95em;
+      opacity: 0.7;
+    }
+    .settings-buttons {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+    #sensitivity-reset,
+    #settings-close {
+      font-size: 1em;
+      padding: 8px 24px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.3);
+      background: transparent;
+      color: #fff;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 600;
+    }
+    #sensitivity-reset:hover,
+    #settings-close:hover {
+      background: rgba(255,255,255,0.1);
+    }
     #slowdown-indicator {
       position: fixed;
       bottom: 50px;
@@ -321,6 +439,7 @@
   <div id="score">Score: 0</div>
   <div id="level">Level 1</div>
   <div id="timer">00:00</div>
+  <button id="settings-btn">⚙ Settings</button>
   <button id="leaderboard-btn">Leaderboard</button>
   <div id="overlay">
     <div class="title">TEETER</div>
@@ -344,6 +463,23 @@
       <div class="lb-title">LEADERBOARD</div>
       <div id="leaderboard-list"></div>
       <button id="leaderboard-close">Close</button>
+    </div>
+  </div>
+  <div id="settings-panel">
+    <div id="settings-box">
+      <div class="settings-title">SETTINGS</div>
+      <div class="sensitivity-row">
+        <label>Tilt Sensitivity</label>
+        <input type="range" id="sensitivity-slider" min="5" max="30" step="0.5" value="8">
+      </div>
+      <div class="sensitivity-info">
+        <span id="sensitivity-value">8.0</span>
+        <span id="sensitivity-label">Low</span>
+      </div>
+      <div class="settings-buttons">
+        <button id="sensitivity-reset">Reset to Default</button>
+        <button id="settings-close">Close</button>
+      </div>
     </div>
   </div>
   <div id="slowdown-indicator">SLOWED</div>

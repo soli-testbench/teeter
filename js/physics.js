@@ -14,7 +14,8 @@ import {
 } from './track.js';
 
 const GRAVITY = 9.8;
-const DIRECT_SENSITIVITY = 15.0;
+export const DEFAULT_SENSITIVITY = 15.0;
+let directSensitivity = DEFAULT_SENSITIVITY;
 const RESPONSE_RATE = 6.0;
 const FORWARD_SPEED = 4.5;
 const PITCH_SENSITIVITY = 3.0;
@@ -95,7 +96,7 @@ function updateOnTrack(dt, tiltAngle, pitch, mouthOpen) {
   }
 
   // Lateral velocity from head tilt
-  const targetVLateral = -tiltAngle * DIRECT_SENSITIVITY;
+  const targetVLateral = -tiltAngle * directSensitivity;
   ball.vLateral += (targetVLateral - ball.vLateral) * RESPONSE_RATE * dt;
 
   // Forward motion modulated by pitch + gravity slope contribution
@@ -223,6 +224,11 @@ function updateFalling(dt) {
     boostActive: false,
   };
 }
+
+export function setSensitivity(value) {
+  directSensitivity = value;
+}
+
 
 export function getBallState() {
   return { ...ball };
