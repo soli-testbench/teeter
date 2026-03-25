@@ -10,3 +10,10 @@
 - **Files changed**: .dockerignore
 - **Tests run**: yes — JS syntax checks passed for all 4 files via `node --check`
 - **Outcome**: success
+
+## conflict-resolver — 2026-03-25T22:51:24Z
+
+- **Conflict**: js/main.js — merge conflict in game loop between upstream's new updateLevelData/updateLevel/updateTimer calls + mouthOpen param and branch's -tiltAngle negation fix
+- **Resolution**: Kept upstream's new code (updateLevelData, updateLevel, updateTimer, mouthOpen param) and applied branch's -tiltAngle negation fix
+- **Tests run**: no — no test suite exists; rebase had only one code conflict with clear resolution
+- **Outcome**: success
