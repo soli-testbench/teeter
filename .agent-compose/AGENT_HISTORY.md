@@ -19,3 +19,10 @@
 - **Files changed**: .gitignore (new), nginx.conf (comments added), .agent-compose/* (removed from tracking)
 - **Tests run**: no — nginx binary not available in sandbox; hash verified via Python
 - **Outcome**: success — diff now contains only .gitignore and nginx.conf CSP header with justification
+
+## conflict-resolver — 2026-03-26T19:17:44Z
+
+- **Conflict**: .gitignore (add/add conflict between upstream's node_modules/data/ entries and branch's .agent-compose/ entry)
+- **Resolution**: Accepted upstream version of .gitignore (config/generated file)
+- **Tests run**: no — no code file conflicts, skipped per instructions
+- **Outcome**: success — rebase completed cleanly after resolving single .gitignore conflict
