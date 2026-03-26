@@ -39,6 +39,7 @@ const slowdownIndicator = document.getElementById('slowdown-indicator');
 const boostIndicator = document.getElementById('boost-indicator');
 const levelEl = document.getElementById('level');
 const timerEl = document.getElementById('timer');
+const retryBtn = document.getElementById('retry-btn');
 
 const STORAGE_KEY = 'teeter_highscores';
 const MAX_SCORES = 10;
@@ -236,53 +237,103 @@ leaderboardBtn.addEventListener('click', () => { showLeaderboard(); });
 leaderboardClose.addEventListener('click', () => { hideLeaderboard(); });
 leaderboardPanel.addEventListener('click', (e) => { if (e.target === leaderboardPanel) hideLeaderboard(); });
 
+retryBtn.addEventListener('click', () => {
+  location.reload();
+});
+
 // --- Init & game loop ---
 
-async function init() {
+async function doInit() {
+  // WebGL pre-check
+  const testCanvas = document.createElement('canvas');
+  const gl = testCanvas.getContext('webgl2') || testCanvas.getContext('webgl');
+  if (!gl) {
+    showError('WebGL is not supported by your browser.\nPlease use a modern browser with WebGL enabled.');
+    return;
+  }
+
+  // Initialize Three.js renderer
+  initRenderer();
+  const config = getTrackConfig();
+  initPhysics(config);
+
+  // Initial render so the scene is visible during loading
+  render();
+
+  subtitle.textContent = 'Requesting camera access...';
+
+  // Request camera
+  let stream;
   try {
-    initRenderer();
-    const config = getTrackConfig();
-    initPhysics(config);
-
-    render();
-
-    subtitle.textContent = 'Requesting camera access...';
-
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-      });
-    } catch (err) {
-      showError('Camera access is required to play.\nPlease allow camera access and reload.');
-      return;
-    }
-
-    subtitle.textContent = 'Loading head tracking model...';
-    await initTracker(stream);
-    calibrate(performance.now());
-
-    overlay.classList.add('hidden');
-    scoreEl.style.display = 'block';
-    levelEl.style.display = 'block';
-    timerEl.style.display = 'block';
-    leaderboardBtn.style.display = 'block';
-    updateScore(0);
-    gameStartTime = performance.now();
-    state = 'playing';
-    lastTime = performance.now();
-    requestAnimationFrame(gameLoop);
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+    });
   } catch (err) {
-    console.error('Initialization error:', err);
-    showError('Failed to initialize. Please reload and try again.');
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      showError('Camera access was denied.\nPlease allow camera access and try again.');
+    } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+      showError('No camera found.\nPlease connect a camera and try again.');
+    } else {
+      showError('Could not access camera.\n' + (err.message || 'Unknown error'));
+    }
+    return;
+  }
+
+  subtitle.textContent = 'Loading head tracking model...';
+
+  // Initialize head tracker
+  try {
+    await initTracker(stream);
+  } catch (err) {
+    console.error('Tracker initialization failed:', err);
+    showError('Failed to load head tracking model.\nPlease check your connection and try again.');
+    return;
+  }
+
+  calibrate(performance.now());
+
+  // Hide overlay, show score and leaderboard button, and start game
+  if (state === 'error') return;
+  overlay.classList.add('hidden');
+  scoreEl.style.display = 'block';
+  levelEl.style.display = 'block';
+  timerEl.style.display = 'block';
+  leaderboardBtn.style.display = 'block';
+  updateScore(0);
+  gameStartTime = performance.now();
+  state = 'playing';
+  lastTime = performance.now();
+  requestAnimationFrame(gameLoop);
+}
+
+async function init() {
+  const INIT_TIMEOUT = 15000;
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error('__TIMEOUT__'));
+    }, INIT_TIMEOUT);
+  });
+
+  try {
+    await Promise.race([doInit(), timeoutPromise]);
+  } catch (err) {
+    if (err.message === '__TIMEOUT__') {
+      console.error('Initialization timed out after 15 seconds');
+      showError('Loading timed out.\nPlease check your connection and try again.');
+    }
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
 function showError(message) {
   state = 'error';
+  overlay.classList.remove('hidden');
   overlay.classList.add('error');
   subtitle.textContent = message;
   overlay.querySelector('.title').textContent = '';
+  retryBtn.classList.add('visible');
 }
 
 function gameLoop(timestamp) {
