@@ -384,7 +384,7 @@ function gameLoop(timestamp) {
 
     updateLevelData(getActiveObstacles(), getActiveCoins(), getActiveTurtles());
 
-    const result = updatePhysics(dt, -tiltAngle, pitch, mouthOpen);
+    const result = updatePhysics(dt, tiltAngle, pitch, mouthOpen);
 
     if (state === 'playing') {
       updateLevel(result.distance);
