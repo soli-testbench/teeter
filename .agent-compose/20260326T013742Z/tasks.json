@@ -16,7 +16,7 @@
             "Add <button id=\"retry-btn\" class=\"retry-btn\">Retry</button> inside #overlay div after .subtitle",
             "Verify the button is present in the DOM"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t2",
@@ -27,7 +27,7 @@
             "Add pointer-events: auto to #overlay.error rule",
             "Verify retry button is hidden by default and visible when .visible class added"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t3",
@@ -37,7 +37,7 @@
             "Show clear error message and retry button if WebGL unavailable",
             "Return early from init() on failure"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t4",
@@ -47,7 +47,7 @@
             "Add showRetryButton() call to camera error handler",
             "Verify error message explains camera is required"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t5",
@@ -58,7 +58,7 @@
             "Show retry button on MediaPipe failure",
             "Clear timeout on MediaPipe failure"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t6",
@@ -70,7 +70,7 @@
             "Check initTimedOut flag after each async step to prevent race conditions",
             "Verify success path does not proceed if timeout already fired"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t7",
@@ -79,7 +79,7 @@
             "Add click event listener on #retry-btn that calls location.reload()",
             "Verify retry button is accessible (pointer-events enabled on error overlay)"
           ],
-          "passes": false
+          "passes": true
         }
       ],
       "quality_checklist": [
@@ -91,7 +91,7 @@
             "Check that showRetryButton() is a single helper called from all error paths",
             "Verify no inline retry button manipulation outside the helper"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q2",
@@ -101,7 +101,7 @@
             "Verify clearTimeout is called on all non-timeout exit paths (success and error)",
             "Verify success path returns early if initTimedOut is true"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q3",
@@ -111,7 +111,7 @@
             "Verify naming conventions match (camelCase, similar patterns)",
             "Verify no unnecessary changes outside the scope of the fix"
           ],
-          "passes": false
+          "passes": true
         }
       ]
     }
@@ -133,7 +133,7 @@
           "Grant camera permission when prompted",
           "Verify the loading overlay disappears and the 3D game is visible and playable"
         ],
-        "passes": false
+        "passes": true
       },
       {
         "id": "v2",
@@ -144,7 +144,7 @@
           "Verify a clear error message about camera access is displayed",
           "Verify a Retry button is visible and clickable"
         ],
-        "passes": false
+        "passes": true
       },
       {
         "id": "v3",
@@ -154,7 +154,7 @@
           "Click the Retry button",
           "Verify the page reloads (loading screen reappears)"
         ],
-        "passes": false
+        "passes": true
       },
       {
         "id": "v4",
@@ -164,7 +164,7 @@
           "Verify there is a WebGL availability check (getContext('webgl')) before initRenderer()",
           "Verify it shows an error message and retry button if WebGL is unavailable"
         ],
-        "passes": false
+        "passes": true
       },
       {
         "id": "v5",
@@ -175,7 +175,7 @@
           "Verify timeout shows error message and retry button",
           "Verify timeout is cleared on successful completion"
         ],
-        "passes": false
+        "passes": true
       }
     ]
   }
