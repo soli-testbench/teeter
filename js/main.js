@@ -22,6 +22,7 @@ import { initPhysics, updatePhysics, resetBall, updateLevelData } from './physic
 import { getPointAtDistance } from './track.js';
 
 const overlay = document.getElementById('overlay');
+const overlayTitle = overlay.querySelector('.title');
 const subtitle = overlay.querySelector('.subtitle');
 const scoreEl = document.getElementById('score');
 const leaderboardBtn = document.getElementById('leaderboard-btn');
@@ -308,19 +309,18 @@ async function doInit() {
 
 async function init() {
   const INIT_TIMEOUT = 15000;
-  let timeoutId;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new Error('__TIMEOUT__'));
-    }, INIT_TIMEOUT);
-  });
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    showError('Loading timed out.\nPlease check your connection and try again.');
+  }, INIT_TIMEOUT);
 
   try {
-    await Promise.race([doInit(), timeoutPromise]);
+    await doInit();
   } catch (err) {
-    if (err.message === '__TIMEOUT__') {
-      console.error('Initialization timed out after 15 seconds');
-      showError('Loading timed out.\nPlease check your connection and try again.');
+    if (!timedOut) {
+      console.error('Initialization error:', err);
+      showError('Failed to initialize.\nPlease reload and try again.');
     }
   } finally {
     clearTimeout(timeoutId);
@@ -332,7 +332,7 @@ function showError(message) {
   overlay.classList.remove('hidden');
   overlay.classList.add('error');
   subtitle.textContent = message;
-  overlay.querySelector('.title').textContent = '';
+  overlayTitle.textContent = '';
   retryBtn.classList.add('visible');
 }
 
