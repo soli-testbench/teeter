@@ -1,0 +1,213 @@
+{
+  "quality": "full",
+  "tasks": [
+    {
+      "id": "fix-loading-screen",
+      "title": "Fix infinite loading screen with error handling and timeout",
+      "description": "Refactor the game initialization in main.js and index.html to handle all failure modes (WebGL unavailable, camera denied, MediaPipe load failure) with clear error messages, and add a 15-second global timeout with a retry button.",
+      "acceptance_criteria": "1. Loading screen disappears and game becomes playable when prerequisites are met. 2. Clear error shown when camera access denied. 3. Clear error shown when MediaPipe fails. 4. Clear error shown when WebGL unavailable. 5. 15-second timeout triggers 'failed to load' with retry option.",
+      "claudeMd": "# Fix Infinite Loading Screen — Implementation Context\n\nYou are fixing a bug in a pure static HTML+JS Three.js ball-rolling game. The game gets stuck on \"Teeter Loading...\" when initialization fails silently.\n\n## Codebase\n\nPure static HTML+JS served by nginx. No npm, no build step. Three.js v0.183.2 via CDN importmap.\n\n- `index.html` — Main page with Three.js importmap, overlay UI, and all CSS\n- `js/main.js` — Game loop and state management, `init()` function is the entry point\n- `js/physics.js` — Ball physics, collision detection\n- `js/renderer.js` — Three.js scene, mesh creation, level generation\n- `js/tracker.js` — MediaPipe head tilt detection (DO NOT MODIFY this file)\n- `Dockerfile` + `nginx.conf` — Docker build serving on port 8080\n\n## What To Change\n\nOnly modify `index.html` and `js/main.js`. Do NOT modify `js/tracker.js`, `js/renderer.js`, or `js/physics.js`.\n\n### 1. index.html Changes\n\n**Add a retry button inside the `#overlay` div**, after the `.subtitle` div:\n```html\n<button id=\"retry-btn\" class=\"retry-btn\">Retry</button>\n```\n\n**Add CSS for the retry button** inside the existing `<style>` block:\n- `.retry-btn` should be styled: `display: none; margin-top: 16px; padding: 10px 32px; font-size: 1em; font-weight: 600; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: #fff; border-radius: 8px; cursor: pointer; pointer-events: auto; font-family: inherit;`\n- `.retry-btn:hover` should have `background: rgba(255,255,255,0.2);`\n- `.retry-btn.visible` should set `display: inline-block;`\n- Also add `#overlay` a rule: `#overlay.error .retry-btn.visible { display: inline-block; }` (this may already work via cascading)\n\n### 2. js/main.js Changes\n\n**Refactor `init()` function** to add these behaviors:\n\n#### a. WebGL Pre-check\nBefore calling `initRenderer()`, add:\n```js\nconst testCanvas = document.createElement('canvas');\nconst gl = testCanvas.getContext('webgl2') || testCanvas.getContext('webgl');\nif (!gl) {\n  showError('WebGL is not supported by your browser.\\nPlease use a modern browser with WebGL enabled.');\n  return;\n}\n```\n\n#### b. Global 15-second timeout\nWrap the initialization logic using `Promise.race` with a timeout:\n```js\nasync function init() {\n  const INIT_TIMEOUT = 15000;\n  let timeoutId;\n  const timeoutPromise = new Promise((_, reject) => {\n    timeoutId = setTimeout(() => {\n      reject(new Error('__TIMEOUT__'));\n    }, INIT_TIMEOUT);\n  });\n\n  try {\n    await Promise.race([doInit(), timeoutPromise]);\n  } catch (err) {\n    if (err.message === '__TIMEOUT__') {\n      console.error('Initialization timed out after 15 seconds');\n      showError('Loading timed out.\\nPlease check your connection and try again.');\n    }\n    // Other errors are already handled inside doInit()\n  } finally {\n    clearTimeout(timeoutId);\n  }\n}\n```\n\nMove the current `init()` body into a new `async function doInit()` that contains the actual initialization steps.\n\n#### c. Camera error specificity\nReplace the existing camera catch block with more specific error handling:\n```js\ntry {\n  stream = await navigator.mediaDevices.getUserMedia({\n    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },\n  });\n} catch (err) {\n  if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {\n    showError('Camera access was denied.\\nPlease allow camera access and try again.');\n  } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {\n    showError('No camera found.\\nPlease connect a camera and try again.');\n  } else {\n    showError('Could not access camera.\\n' + (err.message || 'Unknown error'));\n  }\n  return;\n}\n```\n\n#### d. MediaPipe tracker error handling\nWrap `initTracker()` in its own try-catch:\n```js\nsubtitle.textContent = 'Loading head tracking model...';\ntry {\n  await initTracker(stream);\n} catch (err) {\n  console.error('Tracker initialization failed:', err);\n  showError('Failed to load head tracking model.\\nPlease check your connection and try again.');\n  return;\n}\n```\n\n#### e. Update `showError()` to show retry button\n```js\nconst retryBtn = document.getElementById('retry-btn');\n\nfunction showError(message) {\n  state = 'error';\n  overlay.classList.remove('hidden');\n  overlay.classList.add('error');\n  subtitle.textContent = message;\n  overlay.querySelector('.title').textContent = '';\n  retryBtn.classList.add('visible');\n}\n```\n\n#### f. Wire retry button\nAdd near the other event listeners:\n```js\nretryBtn.addEventListener('click', () => {\n  location.reload();\n});\n```\n\n## Conventions\n- 2-space indent throughout all files\n- ES module imports/exports\n- camelCase for functions/variables, UPPER_SNAKE for constants\n- `let` for module-level mutable state, `const` for constants\n- Match existing code style exactly — look at surrounding code before writing\n- Keep the overlay HTML structure minimal and consistent with existing elements\n- The `.subtitle` element uses `white-space: pre-line` so `\\n` in text content renders as line breaks\n\n## Testing\n- `docker build -t teeter .` must succeed\n- When all prerequisites are met (camera allowed, WebGL available, network working), the loading screen should disappear and the game should be playable\n- The retry button should NOT be visible during normal successful loading\n- Error messages should be specific to the failure type\n- The 15-second timeout should trigger if initialization hangs\n\n## Gotchas\n- Do NOT modify `js/tracker.js` — wrap its exported function with error handling from main.js\n- Do NOT modify `js/renderer.js` or `js/physics.js`\n- The `showError` function already exists — enhance it, don't create a duplicate\n- `overlay` already has a `.hidden` class when the game starts successfully — make sure `showError` removes `.hidden` if it was added during a partial init\n- The overlay has `pointer-events: none` — the retry button needs `pointer-events: auto` to be clickable\n- `subtitle.textContent` (not `innerHTML`) is used for error messages — newlines work because of `white-space: pre-line` on `.subtitle`\n- The timeout sentinel `__TIMEOUT__` is used to distinguish timeout errors from initialization errors that are already handled with `showError()` + `return` inside `doInit()`. Those early returns resolve the promise normally without error, so only genuinely unhandled exceptions and timeout reach the outer catch.",
+      "checklist": [
+        {
+          "id": "t1",
+          "description": "Add retry button HTML and CSS to index.html",
+          "steps": [
+            "Add `<button id=\"retry-btn\" class=\"retry-btn\">Retry</button>` inside the `#overlay` div after the `.subtitle` div",
+            "Add CSS rules for `.retry-btn`, `.retry-btn:hover`, and `.retry-btn.visible` in the existing `<style>` block",
+            "Ensure `.retry-btn` has `pointer-events: auto` and is hidden by default (`display: none`)",
+            "Verify the button is inside the overlay so it inherits centering"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t2",
+          "description": "WebGL pre-check shows specific error when WebGL unavailable",
+          "steps": [
+            "Add a WebGL context test before `initRenderer()` call in main.js",
+            "If no WebGL context, call `showError()` with a message about WebGL not being supported",
+            "Return early from init so no further initialization is attempted"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t3",
+          "description": "Camera access denial shows specific error message",
+          "steps": [
+            "Replace the camera catch block with specific error name checks: NotAllowedError, NotFoundError, etc.",
+            "Each error type gets a distinct, actionable message",
+            "Return early from init after showing the error"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t4",
+          "description": "MediaPipe tracker failure shows specific error message",
+          "steps": [
+            "Wrap `await initTracker(stream)` in a try-catch in main.js",
+            "On catch, call `showError()` with a message about head tracking model failure",
+            "Return early from init after showing the error"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t5",
+          "description": "15-second global timeout triggers failed-to-load message with retry",
+          "steps": [
+            "Refactor init() to use Promise.race with a 15-second timeout",
+            "Move initialization logic into a doInit() function",
+            "On timeout, show 'Loading timed out' error message with retry button",
+            "Clear the timeout on successful init to prevent memory leaks"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t6",
+          "description": "showError() displays retry button and proper error styling",
+          "steps": [
+            "Update showError() to remove 'hidden' class from overlay",
+            "Update showError() to add 'visible' class to retry button",
+            "Verify overlay.classList.add('error') sets red text color",
+            "Wire retry button click to location.reload()"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t7",
+          "description": "Normal successful initialization still works — loading screen disappears and game is playable",
+          "steps": [
+            "Verify that when all prerequisites are met, the overlay gets 'hidden' class",
+            "Verify score display and leaderboard button become visible",
+            "Verify the game loop starts and state transitions to 'playing'",
+            "Verify the retry button is NOT visible during/after successful init"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t8",
+          "description": "Docker build succeeds",
+          "steps": [
+            "Run `docker build -t teeter .` from the project root",
+            "Verify the build completes without errors"
+          ],
+          "passes": false
+        }
+      ],
+      "quality_checklist": [
+        {
+          "id": "q1",
+          "description": "No duplicate error handling — each failure mode has exactly one handler",
+          "steps": [
+            "Check that WebGL error, camera errors, MediaPipe error, timeout error, and generic catch each have distinct handling",
+            "Verify no error condition can trigger two showError() calls"
+          ],
+          "passes": false
+        },
+        {
+          "id": "q2",
+          "description": "Timeout is properly cleaned up on all code paths",
+          "steps": [
+            "Verify clearTimeout is called in a finally block or equivalent",
+            "Verify timeout doesn't fire after successful initialization"
+          ],
+          "passes": false
+        },
+        {
+          "id": "q3",
+          "description": "Code style matches existing codebase conventions",
+          "steps": [
+            "Verify 2-space indentation throughout changes",
+            "Verify camelCase naming for functions and variables",
+            "Verify UPPER_SNAKE_CASE for constants",
+            "Verify CSS follows existing patterns in index.html"
+          ],
+          "passes": false
+        },
+        {
+          "id": "q4",
+          "description": "Retry button is properly hidden during normal flow and visible only on error",
+          "steps": [
+            "Verify retry button starts with display:none",
+            "Verify only showError() makes it visible",
+            "Verify it has pointer-events:auto so it's clickable despite overlay having pointer-events:none"
+          ],
+          "passes": false
+        },
+        {
+          "id": "q5",
+          "description": "No modifications to tracker.js, renderer.js, or physics.js",
+          "steps": [
+            "Verify git diff shows no changes to js/tracker.js, js/renderer.js, or js/physics.js"
+          ],
+          "passes": false
+        }
+      ]
+    }
+  ],
+  "integration": null,
+  "verification": {
+    "buildCommand": "docker build -t teeter .",
+    "runCommand": "docker run -d -p 8080:8080 teeter",
+    "readySignal": "listening|ready|started|Configuration complete",
+    "appType": "web",
+    "port": 8080,
+    "checks": [
+      {
+        "id": "v1",
+        "description": "Page loads and shows the Teeter loading screen initially, then transitions to the game or shows an appropriate error",
+        "steps": [
+          "Open http://localhost:8080 in a browser",
+          "Verify the page loads and shows 'TEETER' title with loading status text",
+          "If camera permission is granted and WebGL works, the loading overlay should disappear and the game should become playable with visible score counter and track"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v2",
+        "description": "Error overlay shows a retry button that reloads the page when clicked",
+        "steps": [
+          "Inspect the HTML source to verify the retry button element exists inside #overlay",
+          "Verify the retry button has CSS that hides it by default and shows it with the .visible class",
+          "Verify the retry button has pointer-events: auto in its CSS"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v3",
+        "description": "WebGL check exists in the initialization code before renderer creation",
+        "steps": [
+          "Read js/main.js and verify there is a WebGL context test (getContext('webgl2') or getContext('webgl')) before initRenderer() is called",
+          "Verify that failing the WebGL check calls showError with a message about WebGL"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v4",
+        "description": "Camera error handling distinguishes between denied and not-found errors",
+        "steps": [
+          "Read js/main.js and verify the camera getUserMedia catch block checks err.name for NotAllowedError and NotFoundError",
+          "Verify each camera error type has a distinct user-facing message"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v5",
+        "description": "MediaPipe tracker initialization is wrapped in error handling",
+        "steps": [
+          "Read js/main.js and verify initTracker(stream) is inside a try-catch",
+          "Verify the catch calls showError with a message about head tracking model failure"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v6",
+        "description": "A 15-second timeout is implemented around the full initialization",
+        "steps": [
+          "Read js/main.js and verify Promise.race is used with a setTimeout of 15000ms",
+          "Verify the timeout path calls showError with a timeout-specific message",
+          "Verify the timeout is cleared after successful initialization"
+        ],
+        "passes": false
+      }
+    ]
+  }
+}
