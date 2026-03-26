@@ -15,3 +15,13 @@
   - Added `if (state === 'error') return;` guard before success-path UI transition in doInit() to prevent timeout race condition
   - Moved `console.error()` outside the `if (!timedOut)` guard so errors are always logged even after timeout
 - **Outcome**: success / exit_signal: true (0 blockers)
+
+## conflict-resolver — 2026-03-26T01:08:55Z
+
+- **Conflict**: js/main.js — two conflict regions during rebase onto upstream/main
+- **Resolution**:
+  - Conflict 1 (variable declarations): merged both sides — kept upstream's `boostIndicator`, `levelEl`, `timerEl` and branch's `retryBtn`
+  - Conflict 2 (doInit function body): kept branch's structured error-handling version, removed duplicate upstream init code that was already present above the conflict, added upstream's `calibrate()`, `levelEl`/`timerEl` display, and `gameStartTime` to the success path. Removed references to non-existent `getObstacles`/`getCoins`/`getTurtle` functions that don't exist in upstream's renderer.js
+  - Conflict 3 (timeout guard commit): merged upstream's `calibrate()` call with branch's `if (state === 'error') return;` guard
+- **Tests run**: none found — static HTML/JS project has no test suite
+- **Outcome**: success
