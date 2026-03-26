@@ -256,6 +256,22 @@
     #leaderboard-close:hover {
       background: rgba(255,255,255,0.1);
     }
+    #speed {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 1.6em;
+      font-weight: 700;
+      z-index: 10;
+      pointer-events: none;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+      background: rgba(0,0,0,0.3);
+      padding: 6px 14px;
+      border-radius: 8px;
+      display: none;
+    }
     #slowdown-indicator {
       position: fixed;
       bottom: 50px;
@@ -346,6 +362,7 @@
       <button id="leaderboard-close">Close</button>
     </div>
   </div>
+  <div id="speed">Speed: 0.0 m/s</div>
   <div id="slowdown-indicator">SLOWED</div>
   <div id="boost-indicator">BOOST</div>
   <div id="version-info" data-updated="2026-03-20T12:00:00Z">v1.0.0</div>
