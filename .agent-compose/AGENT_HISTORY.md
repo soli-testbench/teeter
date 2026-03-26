@@ -30,3 +30,8 @@
 - **Items completed**: t1, t2, t3, t4, t5, t6, t7, q1, q2, q3
 - **Tests run**: no — static HTML/JS project has no test suite; verified server serves updated files
 - **Outcome**: success — re-implemented all error handling after conflict resolution lost changes
+
+## simplifier — 2026-03-26T03:00:00Z
+- **Summary**: Merged showRetryButton() into showError() since every error path always showed the retry button, eliminating 5 duplicate call sites and the standalone function. Removed unused overlayTitle variable.
+- **Tests run**: no — static HTML/JS project has no test suite
+- **Outcome**: success
