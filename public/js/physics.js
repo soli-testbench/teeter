@@ -96,7 +96,7 @@ function updateOnTrack(dt, tiltAngle, pitch, mouthOpen) {
   }
 
   // Lateral velocity from head tilt
-  const targetVLateral = -tiltAngle * directSensitivity;
+  const targetVLateral = tiltAngle * directSensitivity;
   ball.vLateral += (targetVLateral - ball.vLateral) * RESPONSE_RATE * dt;
 
   // Forward motion modulated by pitch + gravity slope contribution
