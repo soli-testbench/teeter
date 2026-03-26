@@ -1,0 +1,68 @@
+{
+  "quality": "skip",
+  "tasks": [
+    {
+      "id": "main",
+      "title": "Verify ball speed indicator implementation",
+      "description": "The ball speed indicator feature is already fully implemented in the codebase. Verify that all acceptance criteria are met by reading the relevant code in index.html and js/main.js. If any criteria is not fully met, make the minimal fix. The speed element (#speed) already exists in the HTML with correct styling, and the game loop in main.js already computes Math.sqrt(vx² + vz²), formats it to 1 decimal place with 'm/s' label, and shows/hides it appropriately.",
+      "acceptance_criteria": "1. #speed element visible in lower-left corner during gameplay (bottom:16px, left:16px). 2. Speed updates every frame from Math.sqrt(vx²+vz²). 3. Displayed as X.X m/s (toFixed(1)). 4. Hidden on start/game-over, visible during active play. 5. Visual style matches #score and #level HUD elements.",
+      "claudeMd": "# Project Context\n\nYou are verifying an already-implemented ball speed indicator in a vanilla JS browser game.\n\n## Tech Stack\n- Vanilla HTML/CSS/JS, no build system, no package.json\n- Three.js v0.183.2 via CDN import map\n- Static files served by nginx (Dockerfile)\n- No test framework\n\n## Key Files\n- `index.html` — contains `#speed` element (lines 283-298) and its DOM node (line 323)\n- `js/main.js` — game loop with speed calculation (lines 344-345), show/hide logic (lines 188, 223, 292)\n- `js/physics.js` — returns `vx` and `vz` in physics result object\n\n## What To Do\n1. Read `index.html` and `js/main.js` to confirm all 5 acceptance criteria are met\n2. The feature is already implemented — only make changes if something is actually missing or broken\n3. If everything looks correct, commit with message `chore: verify speed indicator implementation`\n4. Do NOT introduce new dependencies, frameworks, or restructure existing code\n\n## Conventions\n- Match existing code style: no semicolons inconsistency (the codebase uses semicolons), 2-space indentation\n- HUD elements use: `-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`, white color, `font-weight: 700`, `rgba(0,0,0,0.3)` background, `border-radius: 8px`",
+      "checklist": [
+        {
+          "id": "t1",
+          "description": "Speed element exists in HTML with correct positioning (bottom:16px, left:16px)",
+          "steps": ["Read index.html", "Verify #speed CSS has position:fixed, bottom:16px, left:16px", "Verify <div id='speed'> exists in body"],
+          "passes": false
+        },
+        {
+          "id": "t2",
+          "description": "Speed is computed each frame as Math.sqrt(vx²+vz²) and displayed with toFixed(1) + ' m/s'",
+          "steps": ["Read js/main.js", "Verify gameLoop contains speed calculation from result.vx and result.vz", "Verify speedEl.textContent is set to speed.toFixed(1) + ' m/s'"],
+          "passes": false
+        },
+        {
+          "id": "t3",
+          "description": "Speed indicator hidden on start/game-over, visible during active play",
+          "steps": ["Verify #speed has display:none in CSS (hidden by default on page load)", "Verify speedEl.style.display = 'block' in init() when game starts", "Verify speedEl.style.display = 'none' in enterGameOver()", "Verify speedEl.style.display = 'block' in exitGameOver()"],
+          "passes": false
+        },
+        {
+          "id": "t4",
+          "description": "Visual style matches existing HUD elements (score, level)",
+          "steps": ["Compare #speed CSS with #score and #level CSS", "Verify same font-family, color, font-weight, text-shadow, background, border-radius, padding"],
+          "passes": false
+        }
+      ],
+      "quality_checklist": [
+        {
+          "id": "q1",
+          "description": "No unnecessary code duplication or dead code introduced",
+          "steps": ["Check that speed element is only referenced where needed", "Verify no duplicate speed calculations exist"],
+          "passes": false
+        }
+      ]
+    }
+  ],
+  "integration": null,
+  "verification": {
+    "buildCommand": "echo 'No build step — static files'",
+    "runCommand": "python3 -m http.server 8080 -d /home/user/workspace-c57a3a66-planner-c7cbe210",
+    "readySignal": "Serving HTTP",
+    "appType": "web",
+    "port": 8080,
+    "checks": [
+      {
+        "id": "v1",
+        "description": "Speed indicator element exists and is styled correctly in the DOM",
+        "steps": ["Start the static file server", "Open the page in browser", "Verify #speed element is present in the DOM", "Verify it is initially hidden (display:none)"],
+        "passes": false
+      },
+      {
+        "id": "v2",
+        "description": "Speed indicator becomes visible and updates during gameplay",
+        "steps": ["Allow camera access and wait for game to start", "Verify #speed element becomes visible (display:block)", "Verify speed value updates each frame showing format like '4.5 m/s'"],
+        "passes": false
+      }
+    ]
+  }
+}
