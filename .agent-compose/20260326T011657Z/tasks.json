@@ -17,7 +17,7 @@
             "Change to: `const result = updatePhysics(dt, tiltAngle, pitch, mouthOpen);`",
             "Verify no other references to -tiltAngle exist in the file"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t2",
@@ -28,7 +28,7 @@
             "Change to: `const result = updatePhysics(dt, tiltAngle, pitch, mouthOpen);`",
             "Verify no other references to -tiltAngle exist in the file"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t3",
@@ -38,7 +38,7 @@
             "Confirm both show 'tiltAngle' without negation",
             "Stage and commit: git add public/js/main.js js/main.js && git commit -m 'fix(controls): remove incorrect tiltAngle negation to fix inverted head tilt'"
           ],
-          "passes": false
+          "passes": true
         }
       ],
       "quality_checklist": [
@@ -49,7 +49,7 @@
             "Grep for '-tiltAngle' in both main.js files — should find zero matches",
             "Verify tracker.js and physics.js are unchanged"
           ],
-          "passes": false
+          "passes": true
         }
       ]
     }
@@ -71,7 +71,7 @@
           "Start app with 'node server.js'",
           "Verify app loads at http://localhost:8080 without errors"
         ],
-        "passes": false
+        "passes": true
       }
     ]
   }
