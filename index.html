@@ -35,6 +35,26 @@
     #overlay.error {
       color: #ff6b6b;
     }
+    .retry-btn {
+      display: none;
+      margin-top: 16px;
+      padding: 10px 32px;
+      font-size: 1em;
+      font-weight: 600;
+      border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      border-radius: 8px;
+      cursor: pointer;
+      pointer-events: auto;
+      font-family: inherit;
+    }
+    .retry-btn:hover {
+      background: rgba(255,255,255,0.2);
+    }
+    .retry-btn.visible {
+      display: inline-block;
+    }
     #overlay.hidden {
       display: none;
     }
@@ -325,6 +345,7 @@
   <div id="overlay">
     <div class="title">TEETER</div>
     <div class="subtitle">Loading...</div>
+    <button id="retry-btn" class="retry-btn">Retry</button>
   </div>
   <div id="gameover-overlay">
     <div id="gameover-box">

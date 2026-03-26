@@ -37,6 +37,7 @@ const leaderboardList = document.getElementById('leaderboard-list');
 const leaderboardClose = document.getElementById('leaderboard-close');
 const slowdownIndicator = document.getElementById('slowdown-indicator');
 const boostIndicator = document.getElementById('boost-indicator');
+const retryBtn = document.getElementById('retry-btn');
 const levelEl = document.getElementById('level');
 const timerEl = document.getElementById('timer');
 const speedEl = document.getElementById('speed');
@@ -386,6 +387,20 @@ leaderboardPanel.addEventListener('click', (e) => { if (e.target === leaderboard
 // --- Init & game loop ---
 
 async function init() {
+  // WebGL pre-check
+  const testCanvas = document.createElement('canvas');
+  if (!testCanvas.getContext('webgl2') && !testCanvas.getContext('webgl')) {
+    showError('WebGL is not supported by your browser.\nPlease use a modern browser with WebGL enabled.');
+    return;
+  }
+
+  let initTimedOut = false;
+  const INIT_TIMEOUT_MS = 15000;
+  const timeoutId = setTimeout(() => {
+    initTimedOut = true;
+    showError('Loading is taking too long.\nPlease check your connection and try again.');
+  }, INIT_TIMEOUT_MS);
+
   try {
     initRenderer();
     const config = getTrackConfig();
@@ -396,6 +411,8 @@ async function init() {
     // Pre-fetch leaderboard scores
     fetchScores();
 
+    if (initTimedOut) return;
+
     subtitle.textContent = 'Requesting camera access...';
 
     let stream;
@@ -404,14 +421,35 @@ async function init() {
         video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
       });
     } catch (err) {
+      clearTimeout(timeoutId);
       showError('Camera access is required to play.\nPlease allow camera access and reload.');
       return;
     }
 
-    subtitle.textContent = 'Loading head tracking model...';
-    await initTracker(stream);
-    calibrate(performance.now());
+    if (initTimedOut) return;
 
+    subtitle.textContent = 'Loading head tracking model...';
+
+    try {
+      await initTracker(stream);
+    } catch (err) {
+      clearTimeout(timeoutId);
+      stream.getTracks().forEach(t => t.stop());
+      console.error('MediaPipe initialization error:', err);
+      showError('Failed to load face tracking model.\nPlease check your connection and try again.');
+      return;
+    }
+
+    if (initTimedOut) {
+      stream.getTracks().forEach(t => t.stop());
+      return;
+    }
+
+    clearTimeout(timeoutId);
+
+    if (state === 'error') return;
+
+    calibrate(performance.now());
     loadSensitivity();
 
     overlay.classList.add('hidden');
@@ -427,6 +465,7 @@ async function init() {
     lastTime = performance.now();
     requestAnimationFrame(gameLoop);
   } catch (err) {
+    clearTimeout(timeoutId);
     console.error('Initialization error:', err);
     showError('Failed to initialize. Please reload and try again.');
   }
@@ -437,7 +476,12 @@ function showError(message) {
   overlay.classList.add('error');
   subtitle.textContent = message;
   overlay.querySelector('.title').textContent = '';
+  retryBtn.classList.add('visible');
 }
+
+retryBtn.addEventListener('click', () => {
+  location.reload();
+});
 
 function gameLoop(timestamp) {
   requestAnimationFrame(gameLoop);
@@ -497,4 +541,4 @@ function gameLoop(timestamp) {
   render();
 }
 
-init();
+init().catch(err => console.error('Unhandled init failure:', err));

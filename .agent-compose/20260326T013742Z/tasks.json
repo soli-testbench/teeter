@@ -1,0 +1,182 @@
+{
+  "quality": "full",
+  "tasks": [
+    {
+      "id": "main",
+      "title": "Fix infinite loading screen with error handling, timeout, and retry",
+      "description": "Harden the init() function in public/js/main.js to handle all failure modes (WebGL unavailable, camera denied, MediaPipe load failure) with clear error messages. Add a 15-second timeout with retry. Add retry button markup and styling.",
+      "acceptance_criteria": "- Loading screen disappears and game becomes playable when all prerequisites are met\n- Clear error message when camera access is denied\n- Clear error message when MediaPipe face landmark model fails to load\n- Clear error message when WebGL is unavailable\n- 15-second timeout triggers 'failed to load' message with retry option",
+      "claudeMd": "# Project Context\n\nYou are fixing the infinite loading screen in a vanilla JS browser game called Teeter. The game uses head tracking via webcam to control a ball on a 3D track.\n\n## Tech Stack\n- Vanilla JS with ES modules (no build system)\n- Three.js v0.183.2 via CDN importmap\n- MediaPipe Vision v0.10.33 via CDN dynamic import\n- Express server serves static files from `public/`\n- CSS in `public/css/styles.css`\n\n## Files to Modify\n\n### 1. `public/index.html`\nAdd a retry button inside the `#overlay` div, after the `.subtitle` div:\n```html\n<button id=\"retry-btn\" class=\"retry-btn\">Retry</button>\n```\nThe button should be hidden by default (CSS handles this).\n\n### 2. `public/css/styles.css`\nAdd styles for the retry button and fix pointer-events on error state:\n- `#retry-btn` — hidden by default (`display: none`), styled like existing buttons (semi-transparent dark bg, white text, rounded corners, padding 10px 28px, font-size 1.1em)\n- `#retry-btn.visible` — `display: inline-block`\n- `#overlay.error` — add `pointer-events: auto` so the retry button is clickable (overlay currently has `pointer-events: none`)\n\n### 3. `public/js/main.js`\nThis is the main file. The `init()` function (line ~384) needs these changes:\n\n**a) WebGL pre-check** — Before calling `initRenderer()`, check WebGL availability:\n```js\nconst testCanvas = document.createElement('canvas');\nif (!testCanvas.getContext('webgl2') && !testCanvas.getContext('webgl')) {\n  showError('WebGL is not supported by your browser.\\nPlease use a modern browser with WebGL enabled.');\n  showRetryButton();\n  return;\n}\n```\n\n**b) 15-second timeout with race condition guard** — Wrap the async init steps in a timeout:\n```js\nlet initTimedOut = false;\nconst INIT_TIMEOUT_MS = 15000;\nconst timeoutId = setTimeout(() => {\n  initTimedOut = true;\n  showError('Loading is taking too long.\\nPlease check your connection and try again.');\n  showRetryButton();\n}, INIT_TIMEOUT_MS);\n```\nAfter each major async step, check `if (initTimedOut) return;` before proceeding.\nOn success, call `clearTimeout(timeoutId)` before transitioning to playing state.\n\n**c) MediaPipe-specific error** — The `initTracker(stream)` call is already inside try/catch, but the outer catch gives a generic message. Wrap it specifically:\n```js\ntry {\n  await initTracker(stream);\n} catch (err) {\n  clearTimeout(timeoutId);\n  console.error('MediaPipe initialization error:', err);\n  showError('Failed to load face tracking model.\\nPlease check your connection and try again.');\n  showRetryButton();\n  return;\n}\n```\n\n**d) Add `showRetryButton()` helper:**\n```js\nconst retryBtn = document.getElementById('retry-btn');\n\nfunction showRetryButton() {\n  retryBtn.classList.add('visible');\n}\n\nretryBtn.addEventListener('click', () => {\n  location.reload();\n});\n```\n\n**e) Update `showError()` to also show retry button** — call `showRetryButton()` from `showError()`, or let callers decide (callers should call it explicitly for flexibility).\n\n**f) Guard success path** — After `clearTimeout(timeoutId)`, check `if (initTimedOut) return;` before hiding overlay and starting game loop.\n\n## Conventions\n- Match existing code style: 2-space indent, single quotes, no semicolons at end... actually check the file — it uses semicolons. Match exactly.\n- Use the existing `showError(message)` function pattern.\n- The `#overlay` element and `.subtitle` class are already used for loading states.\n- Keep error messages user-friendly and actionable.\n- The retry button does `location.reload()` — this is intentional because MediaPipe WASM/GPU resources don't cleanly reinitialize.\n\n## Gotchas\n- The overlay has `pointer-events: none` — you MUST add `pointer-events: auto` to `#overlay.error` in CSS, otherwise the retry button won't be clickable.\n- The timeout and success path can race — always check the `initTimedOut` flag after async operations and clear the timeout on success.\n- Camera error is already handled (line ~402) but doesn't show a retry button — add `showRetryButton()` there too.\n- `initRenderer()` is synchronous but can throw if WebGL fails — the WebGL pre-check prevents this, but keep the outer try/catch as a safety net.\n- Do NOT modify `tracker.js` or `renderer.js` — all changes go in `main.js`, `index.html`, and `styles.css`.",
+      "checklist": [
+        {
+          "id": "t1",
+          "description": "Add retry button markup to public/index.html",
+          "steps": [
+            "Open public/index.html",
+            "Add <button id=\"retry-btn\" class=\"retry-btn\">Retry</button> inside #overlay div after .subtitle",
+            "Verify the button is present in the DOM"
+          ],
+          "passes": true
+        },
+        {
+          "id": "t2",
+          "description": "Add retry button and error overlay CSS to public/css/styles.css",
+          "steps": [
+            "Add #retry-btn styles (hidden by default, styled like existing buttons)",
+            "Add #retry-btn.visible { display: inline-block }",
+            "Add pointer-events: auto to #overlay.error rule",
+            "Verify retry button is hidden by default and visible when .visible class added"
+          ],
+          "passes": true
+        },
+        {
+          "id": "t3",
+          "description": "Add WebGL pre-check before renderer initialization",
+          "steps": [
+            "Add canvas.getContext('webgl2')/getContext('webgl') check at start of init()",
+            "Show clear error message and retry button if WebGL unavailable",
+            "Return early from init() on failure"
+          ],
+          "passes": true
+        },
+        {
+          "id": "t4",
+          "description": "Add specific error handling for camera access denial",
+          "steps": [
+            "Verify existing camera error catch block shows clear message",
+            "Add showRetryButton() call to camera error handler",
+            "Verify error message explains camera is required"
+          ],
+          "passes": true
+        },
+        {
+          "id": "t5",
+          "description": "Add specific error handling for MediaPipe face landmark model load failure",
+          "steps": [
+            "Wrap initTracker(stream) call in its own try/catch",
+            "Show specific error message about face tracking model failure",
+            "Show retry button on MediaPipe failure",
+            "Clear timeout on MediaPipe failure"
+          ],
+          "passes": true
+        },
+        {
+          "id": "t6",
+          "description": "Add 15-second initialization timeout with retry option",
+          "steps": [
+            "Add setTimeout with 15000ms that sets initTimedOut flag and shows error",
+            "Show 'Loading is taking too long' message with retry button on timeout",
+            "Clear timeout on successful init completion",
+            "Check initTimedOut flag after each async step to prevent race conditions",
+            "Verify success path does not proceed if timeout already fired"
+          ],
+          "passes": true
+        },
+        {
+          "id": "t7",
+          "description": "Wire retry button to reload the page",
+          "steps": [
+            "Add click event listener on #retry-btn that calls location.reload()",
+            "Verify retry button is accessible (pointer-events enabled on error overlay)"
+          ],
+          "passes": true
+        }
+      ],
+      "quality_checklist": [
+        {
+          "id": "q1",
+          "description": "No duplicate error handling logic — showError and showRetryButton are reused consistently",
+          "steps": [
+            "Check that showError() is called with distinct messages for each failure mode",
+            "Check that showRetryButton() is a single helper called from all error paths",
+            "Verify no inline retry button manipulation outside the helper"
+          ],
+          "passes": true
+        },
+        {
+          "id": "q2",
+          "description": "Race condition between timeout and success is properly guarded",
+          "steps": [
+            "Verify initTimedOut flag is checked after every await",
+            "Verify clearTimeout is called on all non-timeout exit paths (success and error)",
+            "Verify success path returns early if initTimedOut is true"
+          ],
+          "passes": true
+        },
+        {
+          "id": "q3",
+          "description": "Code matches existing style and conventions",
+          "steps": [
+            "Verify indentation matches (2-space)",
+            "Verify naming conventions match (camelCase, similar patterns)",
+            "Verify no unnecessary changes outside the scope of the fix"
+          ],
+          "passes": true
+        }
+      ]
+    }
+  ],
+  "integration": null,
+  "verification": {
+    "buildCommand": "echo 'No build step required'",
+    "runCommand": "npm start",
+    "readySignal": "listening on|Server running",
+    "appType": "web",
+    "port": 3000,
+    "checks": [
+      {
+        "id": "v1",
+        "description": "Loading screen transitions to game when prerequisites are met",
+        "steps": [
+          "Start the app with npm start",
+          "Open http://localhost:3000 in browser",
+          "Grant camera permission when prompted",
+          "Verify the loading overlay disappears and the 3D game is visible and playable"
+        ],
+        "passes": true
+      },
+      {
+        "id": "v2",
+        "description": "Error message shown when camera access is denied",
+        "steps": [
+          "Open http://localhost:3000 in browser",
+          "Deny camera permission when prompted",
+          "Verify a clear error message about camera access is displayed",
+          "Verify a Retry button is visible and clickable"
+        ],
+        "passes": true
+      },
+      {
+        "id": "v3",
+        "description": "Retry button reloads the page",
+        "steps": [
+          "Trigger any error condition (e.g. deny camera)",
+          "Click the Retry button",
+          "Verify the page reloads (loading screen reappears)"
+        ],
+        "passes": true
+      },
+      {
+        "id": "v4",
+        "description": "WebGL error check exists in code",
+        "steps": [
+          "Read public/js/main.js",
+          "Verify there is a WebGL availability check (getContext('webgl')) before initRenderer()",
+          "Verify it shows an error message and retry button if WebGL is unavailable"
+        ],
+        "passes": true
+      },
+      {
+        "id": "v5",
+        "description": "Timeout mechanism exists with 15-second limit",
+        "steps": [
+          "Read public/js/main.js",
+          "Verify a setTimeout with 15000ms is set during init()",
+          "Verify timeout shows error message and retry button",
+          "Verify timeout is cleared on successful completion"
+        ],
+        "passes": true
+      }
+    ]
+  }
+}
