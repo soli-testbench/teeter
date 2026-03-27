@@ -29,10 +29,10 @@ app.use((req, res, next) => {
     "style-src 'self'; " +
     "connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com; " +
     "worker-src 'self' blob:; " +
-    "img-src 'self' data: blob:"
+    "img-src 'self' data: blob:; " +
+    "frame-ancestors 'self' http://localhost:3000 https://venice-internal-flax.vercel.app"
   );
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   next();
 });
