@@ -453,6 +453,8 @@ async function init() {
       ]);
     } catch (err) {
       timeout.cancel();
+      // Stop camera stream to free resources on failure
+      stream.getTracks().forEach(function(t) { t.stop(); });
       if (err.message === 'INIT_TIMEOUT') {
         showError('Loading timed out.\nPlease check your connection and try again.', true);
       } else {
@@ -484,6 +486,7 @@ async function init() {
     timeout.cancel();
     console.error('Initialization error:', err);
     showError('Failed to initialize.\nPlease reload and try again.', true);
+    return;
   }
 }
 
