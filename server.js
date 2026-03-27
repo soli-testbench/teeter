@@ -18,7 +18,7 @@ const MAX_SCORES = 10;
 const MAX_RETAINED_SCORES = parseInt(process.env.MAX_RETAINED_SCORES, 10) || 1000;
 
 // Score validation constants
-const MAX_REASONABLE_SCORE = 1000000;
+const MAX_REASONABLE_SCORE = 10000;
 const MAX_NAME_LENGTH = 15;
 
 // Security headers — inline importmap allowed via hash; everything else in external files

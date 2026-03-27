@@ -180,6 +180,7 @@ async function scoreQualifies(value) {
     return data.qualifies;
   } catch (err) {
     console.error('Failed to check score qualification:', err);
+    // Fallback: use cached scores
     if (cachedScores.length < MAX_SCORES) return true;
     return value > cachedScores[cachedScores.length - 1].score;
   }
@@ -422,6 +423,7 @@ async function init() {
       ]);
     } catch (err) {
       timeout.cancel();
+      // Stop camera stream to free resources on failure
       stream.getTracks().forEach(function(t) { t.stop(); });
       if (err.message === 'INIT_TIMEOUT') {
         showError('Loading timed out.\nPlease check your connection and try again.', true);
@@ -452,6 +454,7 @@ async function init() {
     requestAnimationFrame(gameLoop);
   } catch (err) {
     timeout.cancel();
+    // Stop camera stream if it was acquired before the error
     if (stream) {
       stream.getTracks().forEach(function(t) { t.stop(); });
     }
