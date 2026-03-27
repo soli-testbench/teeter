@@ -3,7 +3,6 @@ import {
   TRACK_HEIGHT,
   BALL_RADIUS,
   BALL_START_DISTANCE,
-  FINISH_LINE_DISTANCE,
   getPointAtDistance,
   getTangentAtDistance,
   getRightAtDistance,
@@ -109,11 +108,6 @@ function updateOnTrack(dt, tiltAngle, pitch, mouthOpen) {
   ball.distance += ball.vForward * dt;
   ball.lateral += ball.vLateral * dt;
 
-  // Clamp distance to track length
-  if (ball.distance > getTrackLength()) {
-    ball.distance = getTrackLength();
-  }
-
   // Compute world position from track coordinates
   const centerPoint = getPointAtDistance(ball.distance);
   const right = getRightAtDistance(ball.distance);
@@ -174,9 +168,6 @@ function updateOnTrack(dt, tiltAngle, pitch, mouthOpen) {
     }
   }
 
-  // Check finish line
-  const finished = ball.distance >= trackConfig.finishLineDistance;
-
   return {
     x: ball.worldX,
     y: ball.worldY,
@@ -186,7 +177,6 @@ function updateOnTrack(dt, tiltAngle, pitch, mouthOpen) {
     vz: ball.vForward,
     falling: ball.falling,
     needsReset: false,
-    finished,
     obstacleHit,
     coinsCollected: newlyCollected,
     turtleCollected: turtleJustCollected,
@@ -216,7 +206,6 @@ function updateFalling(dt) {
     vz: ball.vForward,
     falling: true,
     needsReset,
-    finished: false,
     obstacleHit: false,
     coinsCollected: [],
     turtleCollected: null,

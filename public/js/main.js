@@ -15,6 +15,7 @@ import {
   updateCoinRotation,
   updateSceneColors,
   updateMovingWalls,
+  updateChunks,
 } from './renderer.js';
 
 import { initTracker, calibrate, detectTilt, detectPitch, detectMouthOpen, resetTilt } from './tracker.js';
@@ -68,7 +69,6 @@ let score = 0;
 let finalScore = 0;
 let currentLevel = 1;
 let gameStartTime = 0;
-let finishTime = 0;
 let rendererInitialized = false;
 
 // Cached leaderboard scores for rendering
@@ -180,7 +180,6 @@ async function scoreQualifies(value) {
     return data.qualifies;
   } catch (err) {
     console.error('Failed to check score qualification:', err);
-    // Fallback: use cached scores
     if (cachedScores.length < MAX_SCORES) return true;
     return value > cachedScores[cachedScores.length - 1].score;
   }
@@ -273,36 +272,6 @@ async function showLeaderboard() {
 }
 
 function hideLeaderboard() { leaderboardPanel.classList.remove('visible'); }
-
-// --- Finish state ---
-
-async function enterFinished(timestamp) {
-  finishTime = ((timestamp - gameStartTime) / 1000).toFixed(1);
-  finalScore = score;
-  state = 'finished';
-
-  gameoverTitle.textContent = 'FINISHED!';
-  gameoverScore.textContent = 'Score: ' + finalScore + '  |  Time: ' + finishTime + 's';
-  gameoverMessage.textContent = 'Checking score...';
-  nameEntry.classList.remove('visible');
-
-  levelEl.style.display = 'none';
-  timerEl.style.display = 'none';
-  speedEl.style.display = 'none';
-  gameoverOverlay.classList.add('visible');
-
-  const qualifies = await scoreQualifies(finalScore);
-  if (qualifies) {
-    gameoverMessage.textContent = 'New high score!';
-    nameEntry.classList.add('visible');
-    nameInput.value = '';
-    nameInput.focus();
-  } else {
-    gameoverMessage.textContent = 'Great run!';
-    nameEntry.classList.remove('visible');
-    resetTimer = setTimeout(() => { exitGameOver(); }, NON_QUALIFYING_DELAY);
-  }
-}
 
 // --- Game over flow ---
 
@@ -453,7 +422,6 @@ async function init() {
       ]);
     } catch (err) {
       timeout.cancel();
-      // Stop camera stream to free resources on failure
       stream.getTracks().forEach(function(t) { t.stop(); });
       if (err.message === 'INIT_TIMEOUT') {
         showError('Loading timed out.\nPlease check your connection and try again.', true);
@@ -484,7 +452,6 @@ async function init() {
     requestAnimationFrame(gameLoop);
   } catch (err) {
     timeout.cancel();
-    // Stop camera stream if it was acquired before the error
     if (stream) {
       stream.getTracks().forEach(function(t) { t.stop(); });
     }
@@ -534,6 +501,8 @@ function gameLoop(timestamp) {
     if (state === 'playing') {
       updateLevel(result.distance);
       updateTimer(timestamp);
+      // Generate new track chunks and cull old ones
+      updateChunks(result.distance);
     }
 
     updateBallPosition(result.x, result.y, result.z);
@@ -561,12 +530,7 @@ function gameLoop(timestamp) {
     if (result.boostActive) { boostIndicator.classList.add('visible'); }
     else { boostIndicator.classList.remove('visible'); }
 
-    // Handle finish
-    if (result.finished && state === 'playing') {
-      enterFinished(timestamp);
-    }
-
-    // Handle falling
+    // Handle falling — game over only when ball falls off track
     if (result.falling && state === 'playing') { state = 'falling'; }
     if (result.needsReset && state === 'falling') { enterGameOver(); }
   }
