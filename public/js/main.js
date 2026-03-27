@@ -39,6 +39,7 @@ const slowdownIndicator = document.getElementById('slowdown-indicator');
 const boostIndicator = document.getElementById('boost-indicator');
 const levelEl = document.getElementById('level');
 const timerEl = document.getElementById('timer');
+const retryBtn = document.getElementById('retry-btn');
 const speedEl = document.getElementById('speed');
 const settingsBtn = document.getElementById('settings-btn');
 const settingsPanel = document.getElementById('settings-panel');
@@ -46,6 +47,8 @@ const settingsClose = document.getElementById('settings-close');
 const sensitivitySlider = document.getElementById('sensitivity-slider');
 const sensitivityValue = document.getElementById('sensitivity-value');
 const sensitivityReset = document.getElementById('sensitivity-reset');
+
+const INIT_TIMEOUT_MS = 15000;
 
 const SENSITIVITY_STORAGE_KEY = 'teeter_sensitivity';
 const MAX_SCORES = 10;
@@ -66,6 +69,7 @@ let finalScore = 0;
 let currentLevel = 1;
 let gameStartTime = 0;
 let finishTime = 0;
+let rendererInitialized = false;
 
 // Cached leaderboard scores for rendering
 let cachedScores = [];
@@ -385,10 +389,34 @@ leaderboardPanel.addEventListener('click', (e) => { if (e.target === leaderboard
 
 // --- Init & game loop ---
 
+function createInitTimeout() {
+  let timeoutId;
+  const promise = new Promise(function(_, reject) {
+    timeoutId = setTimeout(function() {
+      reject(new Error('INIT_TIMEOUT'));
+    }, INIT_TIMEOUT_MS);
+  });
+  return { promise: promise, cancel: function() { clearTimeout(timeoutId); } };
+}
+
 async function init() {
+  // Check WebGL support before anything else
+  var testCanvas = document.createElement('canvas');
+  var gl = testCanvas.getContext('webgl2') || testCanvas.getContext('webgl');
+  if (!gl) {
+    showError('WebGL is not supported by your browser.\nPlease use a modern browser with WebGL enabled.', true);
+    return;
+  }
+
+  var timeout = createInitTimeout();
+  var stream;
+
   try {
-    initRenderer();
-    const config = getTrackConfig();
+    if (!rendererInitialized) {
+      initRenderer();
+      rendererInitialized = true;
+    }
+    var config = getTrackConfig();
     initPhysics(config);
 
     render();
@@ -396,25 +424,53 @@ async function init() {
     // Pre-fetch leaderboard scores
     fetchScores();
 
+    // Request camera access
     subtitle.textContent = 'Requesting camera access...';
 
-    let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-      });
+      stream = await Promise.race([
+        navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        }),
+        timeout.promise,
+      ]);
     } catch (err) {
-      showError('Camera access is required to play.\nPlease allow camera access and reload.');
+      timeout.cancel();
+      if (err.message === 'INIT_TIMEOUT') {
+        showError('Loading timed out.\nPlease check your connection and try again.', true);
+      } else {
+        showError('Camera access is required to play.\nPlease allow camera access and reload.', true);
+      }
       return;
     }
 
+    // Load MediaPipe face landmark model
     subtitle.textContent = 'Loading head tracking model...';
-    await initTracker(stream);
+    try {
+      await Promise.race([
+        initTracker(stream),
+        timeout.promise,
+      ]);
+    } catch (err) {
+      timeout.cancel();
+      // Stop camera stream to free resources on failure
+      stream.getTracks().forEach(function(t) { t.stop(); });
+      if (err.message === 'INIT_TIMEOUT') {
+        showError('Loading timed out.\nPlease check your connection and try again.', true);
+      } else {
+        console.error('Tracker initialization error:', err);
+        showError('Failed to load face tracking model.\nPlease check your connection and try again.', true);
+      }
+      return;
+    }
+
+    timeout.cancel();
     calibrate(performance.now());
 
     loadSensitivity();
 
     overlay.classList.add('hidden');
+    retryBtn.classList.remove('visible');
     scoreEl.style.display = 'block';
     levelEl.style.display = 'block';
     timerEl.style.display = 'block';
@@ -427,17 +483,38 @@ async function init() {
     lastTime = performance.now();
     requestAnimationFrame(gameLoop);
   } catch (err) {
+    timeout.cancel();
+    // Stop camera stream if it was acquired before the error
+    if (stream) {
+      stream.getTracks().forEach(function(t) { t.stop(); });
+    }
     console.error('Initialization error:', err);
-    showError('Failed to initialize. Please reload and try again.');
+    showError('Failed to initialize.\nPlease reload and try again.', true);
+    return;
   }
 }
 
-function showError(message) {
+function showError(message, showRetry) {
   state = 'error';
+  overlay.classList.remove('hidden');
   overlay.classList.add('error');
   subtitle.textContent = message;
   overlay.querySelector('.title').textContent = '';
+  if (showRetry) {
+    retryBtn.classList.add('visible');
+  } else {
+    retryBtn.classList.remove('visible');
+  }
 }
+
+retryBtn.addEventListener('click', function() {
+  retryBtn.classList.remove('visible');
+  overlay.classList.remove('error');
+  overlay.querySelector('.title').textContent = 'TEETER';
+  subtitle.textContent = 'Loading...';
+  state = 'loading';
+  init();
+});
 
 function gameLoop(timestamp) {
   requestAnimationFrame(gameLoop);

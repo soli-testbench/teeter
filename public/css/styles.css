@@ -27,9 +27,30 @@ canvas { display: block; }
 }
 #overlay.error {
   color: #ff6b6b;
+  pointer-events: auto;
 }
 #overlay.hidden {
   display: none;
+}
+#retry-btn {
+  display: none;
+  margin-top: 20px;
+  font-size: 1em;
+  padding: 10px 32px;
+  border-radius: 8px;
+  border: none;
+  background: #4a90d9;
+  color: #fff;
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 600;
+  pointer-events: auto;
+}
+#retry-btn:hover {
+  background: #5aa0e9;
+}
+#retry-btn.visible {
+  display: inline-block;
 }
 #score {
   position: fixed;
