@@ -25,7 +25,7 @@ const MAX_NAME_LENGTH = 15;
 app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; " +
-    "script-src 'self' https://cdn.jsdelivr.net; " +
+    "script-src 'self' https://cdn.jsdelivr.net 'sha256-Cb7VRvgKHYvwTusy6WvuTr1ww8fUTjYTnEACYzG5a/8='; " +
     "style-src 'self'; " +
     "connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com; " +
     "worker-src 'self' blob:; " +
