@@ -33,6 +33,7 @@ const gameoverMessage = gameoverOverlay.querySelector('.go-message');
 const nameEntry = document.getElementById('name-entry');
 const nameInput = document.getElementById('name-input');
 const nameSubmit = document.getElementById('name-submit');
+const playAgainBtn = document.getElementById('play-again-btn');
 const leaderboardPanel = document.getElementById('leaderboard-panel');
 const leaderboardList = document.getElementById('leaderboard-list');
 const leaderboardClose = document.getElementById('leaderboard-close');
@@ -301,12 +302,14 @@ async function enterGameOver() {
   levelEl.style.display = 'none';
   timerEl.style.display = 'none';
   speedEl.style.display = 'none';
+  playAgainBtn.classList.remove('visible');
   gameoverOverlay.classList.add('visible');
 
   const qualifies = await scoreQualifies(finalScore);
   if (qualifies) {
     gameoverMessage.textContent = 'New high score!';
     nameEntry.classList.add('visible');
+    playAgainBtn.classList.add('visible');
     const savedName = loadPlayerName();
     nameInput.value = savedName;
     nameInput.focus();
@@ -314,8 +317,9 @@ async function enterGameOver() {
       nameInput.select();
     }
   } else {
-    gameoverMessage.textContent = '';
+    gameoverMessage.textContent = 'Restarting...';
     nameEntry.classList.remove('visible');
+    playAgainBtn.classList.add('visible');
     resetTimer = setTimeout(() => { exitGameOver(); }, NON_QUALIFYING_DELAY);
   }
 }
@@ -340,6 +344,7 @@ function exitGameOver() {
   if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
   gameoverOverlay.classList.remove('visible');
   nameEntry.classList.remove('visible');
+  playAgainBtn.classList.remove('visible');
 
   resetTrack();
   const config = getTrackConfig();
@@ -371,6 +376,7 @@ function getStartBallPosition(config) {
 
 nameSubmit.addEventListener('click', () => { submitScore(); });
 nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitScore(); });
+playAgainBtn.addEventListener('click', () => { exitGameOver(); });
 leaderboardBtn.addEventListener('click', () => { showLeaderboard(); });
 leaderboardClose.addEventListener('click', () => { hideLeaderboard(); });
 leaderboardPanel.addEventListener('click', (e) => { if (e.target === leaderboardPanel) hideLeaderboard(); });

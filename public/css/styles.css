@@ -199,6 +199,25 @@ canvas { display: block; }
 #name-submit:hover {
   background: #5aa0e9;
 }
+#play-again-btn {
+  display: none;
+  margin-top: 16px;
+  font-size: 1em;
+  padding: 8px 24px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.3);
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 600;
+}
+#play-again-btn:hover {
+  background: rgba(255,255,255,0.1);
+}
+#play-again-btn.visible {
+  display: inline-block;
+}
 #leaderboard-panel {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
