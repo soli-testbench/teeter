@@ -42,6 +42,7 @@ const levelEl = document.getElementById('level');
 const timerEl = document.getElementById('timer');
 
 const STORAGE_KEY = 'teeter_highscores';
+const PLAYER_NAME_STORAGE_KEY = 'teeter_player_name';
 const MAX_SCORES = 10;
 const NON_QUALIFYING_DELAY = 2000;
 const CHUNK_LENGTH = 20;
@@ -140,6 +141,18 @@ function renderLeaderboard() {
 function showLeaderboard() { renderLeaderboard(); leaderboardPanel.classList.add('visible'); }
 function hideLeaderboard() { leaderboardPanel.classList.remove('visible'); }
 
+// --- Player name persistence ---
+
+function loadPlayerName() {
+  try {
+    return localStorage.getItem(PLAYER_NAME_STORAGE_KEY) || '';
+  } catch { return ''; }
+}
+
+function savePlayerName(name) {
+  try { localStorage.setItem(PLAYER_NAME_STORAGE_KEY, name); } catch {}
+}
+
 // --- Game over flow ---
 
 function enterGameOver() {
@@ -152,8 +165,12 @@ function enterGameOver() {
   if (scoreQualifies(finalScore)) {
     gameoverMessage.textContent = 'New high score!';
     nameEntry.classList.add('visible');
-    nameInput.value = '';
+    const savedName = loadPlayerName();
+    nameInput.value = savedName;
     nameInput.focus();
+    if (savedName) {
+      nameInput.select();
+    }
   } else {
     gameoverMessage.textContent = '';
     nameEntry.classList.remove('visible');
@@ -168,6 +185,7 @@ function enterGameOver() {
 function submitScore() {
   let name = nameInput.value.trim();
   if (!name) name = 'Anonymous';
+  savePlayerName(name);
   addScore(name, finalScore);
   exitGameOver();
 }

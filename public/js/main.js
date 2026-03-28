@@ -52,6 +52,7 @@ const sensitivityReset = document.getElementById('sensitivity-reset');
 const INIT_TIMEOUT_MS = 15000;
 
 const SENSITIVITY_STORAGE_KEY = 'teeter_sensitivity';
+const PLAYER_NAME_STORAGE_KEY = 'teeter_player_name';
 const MAX_SCORES = 10;
 const NON_QUALIFYING_DELAY = 2000;
 const CHUNK_LENGTH = 20;
@@ -134,6 +135,18 @@ function loadSensitivity() {
 
 function saveSensitivity(val) {
   try { localStorage.setItem(SENSITIVITY_STORAGE_KEY, String(val)); } catch {}
+}
+
+// --- Player name persistence ---
+
+function loadPlayerName() {
+  try {
+    return localStorage.getItem(PLAYER_NAME_STORAGE_KEY) || '';
+  } catch { return ''; }
+}
+
+function savePlayerName(name) {
+  try { localStorage.setItem(PLAYER_NAME_STORAGE_KEY, name); } catch {}
 }
 
 function showSettings() { settingsPanel.classList.add('visible'); }
@@ -294,8 +307,12 @@ async function enterGameOver() {
   if (qualifies) {
     gameoverMessage.textContent = 'New high score!';
     nameEntry.classList.add('visible');
-    nameInput.value = '';
+    const savedName = loadPlayerName();
+    nameInput.value = savedName;
     nameInput.focus();
+    if (savedName) {
+      nameInput.select();
+    }
   } else {
     gameoverMessage.textContent = '';
     nameEntry.classList.remove('visible');
@@ -306,6 +323,7 @@ async function enterGameOver() {
 async function submitScore() {
   let name = nameInput.value.trim();
   if (!name) name = 'Anonymous';
+  savePlayerName(name);
   nameSubmit.disabled = true;
   nameSubmit.textContent = 'Submitting...';
   const result = await addScore(name, finalScore);
