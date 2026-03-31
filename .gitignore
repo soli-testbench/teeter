@@ -1,2 +1,2 @@
-node_modules/
-data/
+# Agent operational artifacts — not part of the application
+.agent-compose/
